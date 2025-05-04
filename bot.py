@@ -325,7 +325,6 @@ async def show_admin_receipts(message):
             else:
                 status_text = "⏳ Gözləyir"
             
-            # Payment method info - Fix here: first try op_payment_method, then fallback to payment_method
             payment_method = receipt.get('op_payment_method') or receipt.get('payment_method', 'Təyin edilməyib')
             if payment_method == 'card':
                 payment_info = "💳 Müştəri tərəfindən kartla ödəniş"
@@ -2356,6 +2355,7 @@ async def show_command_guide(message: types.Message):
             "*Əsas Əmrlər:*\n"
             "/start - Botu başlatmaq və yenidən rol seçmək\n"
             "/help - Kömək məlumatlarını göstərmək\n\n"
+
             
             "*Müştərilər üçün Əmrlər:*\n"
             "✅ Yeni sifariş ver - Yeni sifariş yaratmaq\n"
@@ -2372,7 +2372,9 @@ async def show_command_guide(message: types.Message):
             
             "*Bot haqqında:*\n"
             "Bu bot müştərilərə usta sifarişi verməyə və ustalara müştəri tapmağa kömək edir. "
-            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur."
+            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur.\n\n"
+
+            "*Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*\n"
         )
         
         # Əsas menyuya qayıtmaq düyməsini əlavə edirik

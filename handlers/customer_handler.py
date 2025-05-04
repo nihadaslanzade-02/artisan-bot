@@ -15,6 +15,7 @@ import datetime
 import re
 import asyncio
 from config import *
+import random
 
 # Set up logging
 logging.basicConfig(
@@ -83,7 +84,8 @@ async def show_command_guide(message: types.Message):
             
             "*Bot haqqında:*\n"
             "Bu bot müştərilərə usta sifarişi verməyə və ustalara müştəri tapmağa kömək edir. "
-            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur."
+            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur.\n\n"
+            "*Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*"
         )
         
         # Əsas menyuya qayıtmaq düyməsini əlavə edirik
@@ -153,7 +155,7 @@ def register_handlers(dp):
         try:
             # First show guide
             guide_text = (
-                "-"
+                "*Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*\n"
             )
             
             await message.answer(guide_text, parse_mode="Markdown")
@@ -198,7 +200,7 @@ def register_handlers(dp):
         """Show guide and agreement for customers"""
         # First show guide
         guide_text = (
-            " - "
+            " *Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*\n "
         )
         
         await message.answer(guide_text, parse_mode="Markdown")
@@ -291,8 +293,35 @@ def register_handlers(dp):
                 "👋 Xoş gəlmisiniz! Müştəri qeydiyyatı üçün zəhmət olmasa, məlumatlarınızı təqdim edin."
             )
             
-            # Pre-fill name from Telegram profile
-            full_name = message.from_user.full_name
+            # Pre-fill name from Telegram profile with extra checks
+            # Generate a user-specific name using their Telegram profile
+            user_id = message.chat.id
+
+            # Try to get the user's real name first
+            if message.chat.first_name:
+                if message.chat.last_name:
+                    full_name = f"{message.chat.first_name} {message.chat.last_name}"
+                else:
+                    full_name = message.from_user.first_name
+            # Then try username if no real name is available
+            elif message.chat.username and len(message.chat.username.strip()) > 0:
+                full_name = message.chat.username
+            # Finally, generate a random name as last resort
+            else:
+                try:
+                    import random
+                    random.seed(user_id)  # Use user ID as seed
+                    unique_number = random.randint(10000, 99999)
+                    full_name = f"İstifadəçi{unique_number}"
+                except Exception as e:
+                    # Fallback if random fails
+                    full_name = f"İstifadəçi{user_id % 100000}"
+            
+            # Log the name being used
+            # Add this near the name generation code
+            logger.info(f"User data - ID: {message.chat.id}, username: {message.chat.username}, first_name: {message.chat.first_name}, last_name: {message.chat.last_name}")
+            logger.info(f"Generated name for registration: {full_name}")
+        
             
             keyboard = InlineKeyboardMarkup(row_width=1)
             keyboard.add(

@@ -17,6 +17,7 @@ import re
 import asyncio
 from config import *
 from notification_service import *
+import random
 
 
 # Set up logging
@@ -90,7 +91,9 @@ async def show_command_guide(message: types.Message):
             
             "*Bot haqqında:*\n"
             "Bu bot müştərilərə usta sifarişi verməyə və ustalara müştəri tapmağa kömək edir. "
-            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur."
+            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur.\n\n"
+
+            "*Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*\n"
         )
         
         # Əsas menyuya qayıtmaq düyməsini əlavə edirik
@@ -151,7 +154,7 @@ def register_handlers(dp):
         try:
             # First show guide
             guide_text = (
-                " - "
+                " *Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*\n "
             )
             
             await message.answer(guide_text, parse_mode="Markdown")
@@ -281,7 +284,7 @@ def register_handlers(dp):
             )
             
             # Pre-fill name from Telegram profile
-            full_name = message.from_user.full_name
+            full_name = message.chat.full_name
             
             # Create inline keyboard for name confirmation
             keyboard = InlineKeyboardMarkup(row_width=1)
@@ -315,6 +318,7 @@ def register_handlers(dp):
         lambda c: c.data in ["confirm_artisan_name", "change_artisan_name"],
         state=ArtisanRegistrationStates.confirming_name
     )
+    
     async def process_name_confirmation(callback_query: types.CallbackQuery, state: FSMContext):
         """Process artisan name confirmation"""
         try:
