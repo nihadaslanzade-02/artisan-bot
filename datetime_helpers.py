@@ -29,7 +29,7 @@ AZ_DAY_NAMES = {
     6: "Bazar"
 }
 
-def get_date_keyboard(days_ahead: int = 14) -> InlineKeyboardMarkup:
+def get_date_keyboard(days_ahead: int = 1) -> InlineKeyboardMarkup:
     """
     Create a keyboard with date options for the next N days.
     
@@ -63,8 +63,8 @@ def get_date_keyboard(days_ahead: int = 14) -> InlineKeyboardMarkup:
 
 def get_time_keyboard(
     start_hour: int = 1, 
-    end_hour: int = 23,  # 00 əvəzinə 23 yazın
-    interval_mins: int = 10  
+    end_hour: int = 21,
+    interval_mins: int = 30  
 ) -> InlineKeyboardMarkup:
     """
     Create a keyboard with time slot options.
@@ -82,16 +82,16 @@ def get_time_keyboard(
     
     # Default değerleri config değerleriyle değiştir
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 1 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 23 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 21 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
     if end_hour == 24:
-        end_hour = 23
+        end_hour = 21
         include_midnight = True
     else:
         include_midnight = False
         
-    interval_mins = TIME_SLOT_INTERVAL if interval_mins == 10 else interval_mins
+    interval_mins = TIME_SLOT_INTERVAL if interval_mins == 30 else interval_mins
     
     keyboard = InlineKeyboardMarkup(row_width=3)
     buttons = []
@@ -144,8 +144,8 @@ def get_available_time_slots(
     date_str: str, 
     booked_slots: List[str],
     start_hour: int = 1,
-    end_hour: int = 23,  # 00 əvəzinə 23 yazın
-    interval_mins: int = 10  
+    end_hour: int = 21, 
+    interval_mins: int = 30  
 ) -> List[str]:
     """
     Get available time slots for a specific date, excluding already booked slots.
@@ -165,16 +165,16 @@ def get_available_time_slots(
     
     # Default değerleri config değerleriyle değiştir
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 1 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 23 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 21 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
     if end_hour == 24:
-        end_hour = 23
+        end_hour = 21
         include_midnight = True
     else:
         include_midnight = False
         
-    interval_mins = TIME_SLOT_INTERVAL if interval_mins == 10 else interval_mins
+    interval_mins = TIME_SLOT_INTERVAL if interval_mins ==30 else interval_mins
     
     # Generate all possible time slots
     all_slots = []
@@ -199,8 +199,8 @@ def get_time_slots_keyboard(
     date_str: str, 
     booked_slots: List[str] = None,
     start_hour: int = 1,
-    end_hour: int = 23,  # 00 əvəzinə 23 yazın
-    interval_mins: int = 10
+    end_hour: int = 21, 
+    interval_mins: int = 30
 ) -> InlineKeyboardMarkup:
     """Create a keyboard with available time slots for a specific date."""
     keyboard = InlineKeyboardMarkup(row_width=3)
@@ -213,16 +213,16 @@ def get_time_slots_keyboard(
     
     # Set default values with config values
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 1 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 23 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 21 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
     if end_hour == 24:
-        end_hour = 23
+        end_hour = 21
         include_midnight = True
     else:
         include_midnight = False
         
-    interval_mins = TIME_SLOT_INTERVAL if interval_mins == 10 else interval_mins
+    interval_mins = TIME_SLOT_INTERVAL if interval_mins == 30 else interval_mins
     
     # Check if selected date is today
     import datetime  # Önce modülü import et

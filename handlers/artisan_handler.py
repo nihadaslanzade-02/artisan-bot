@@ -2654,7 +2654,8 @@ def register_handlers(dp):
             await callback_query.message.answer(
                 f"💰 *{selected_subservice}* xidməti üçün qiymət aralığını təyin edin.\n\n"
                 f"Zəhmət olmasa, minimum və maksimum qiyməti AZN ilə vergül ilə ayıraraq daxil edin.\n"
-                f"Məsələn: <code>30,80</code> - bu, 30 AZN minimum və 80 AZN maksimum qiymət deməkdir.{info_text}",
+                f"Məsələn: <code>30,80</code> - bu, 30 AZN minimum və 80 AZN maksimum qiymət deməkdir.\n"
+                f"*Qeyd: Rəqəmləri daxil edərkən qarşısında AZN yazmayın. Bu, sistem xətasına səbəb ola bilər.*{info_text}",
                 parse_mode="HTML"
             )
             
@@ -3550,7 +3551,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: 4169 7388 5555 6666 (USTABOT LLC)\n"
+                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863 (Nihad Aslanzade)\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",

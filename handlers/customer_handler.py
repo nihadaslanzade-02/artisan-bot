@@ -824,8 +824,8 @@ def register_handlers(dp):
                 data['longitude'] = longitude
                 data['location_name'] = location_name
             
-            # Get date keyboard (next 14 days)
-            keyboard = get_date_keyboard(days_ahead=14)
+            # Get date keyboard (next 1 day)
+            keyboard = get_date_keyboard(days_ahead=1)
             
             location_text = f"📍 Yeriniz: {location_name}" if location_name else "📍 Yeriniz qeydə alındı."
             
@@ -868,7 +868,7 @@ def register_handlers(dp):
                 await callback_query.message.answer(
                     "⚠️ Bu gün üçün artıq keçmiş saat seçə bilməzsiniz.\n\n"
                     "Xahiş edirik, başqa bir tarix seçin və ya sabahkı tarix üçün sifariş verin.",
-                    reply_markup=get_date_keyboard(days_ahead=14)  # Show date selection again
+                    reply_markup=get_date_keyboard(days_ahead=1)  # Show date selection again
                 )
             else:
                 # Show available time slots
@@ -895,7 +895,7 @@ def register_handlers(dp):
         """Go back to date selection"""
         try:
             # Get date keyboard
-            keyboard = get_date_keyboard(days_ahead=14)
+            keyboard = get_date_keyboard(days_ahead=1)
             
             await callback_query.message.answer(
                 "📅 Xidmətin tarixini seçin:",

@@ -172,7 +172,7 @@ async def help_command(message: types.Message):
             "• Bot haqqında məlumat üçün /help yazın\n"
             "• Yenidən başlamaq üçün /start yazın\n\n"
             
-            "❓ Suallarınız olarsa, bizə yazın: support@ustabot.az"
+            "❓ Suallarınız olarsa, bizə yazın: +994506606351"
         )
         
         await message.answer(
@@ -455,7 +455,7 @@ async def show_admin_orders(message):
             JOIN customers c ON o.customer_id = c.id
             JOIN artisans a ON o.artisan_id = a.id
             ORDER BY o.created_at DESC
-            LIMIT 10
+            LIMIT 30
         """
         
         orders = execute_query(query, fetchall=True, dict_cursor=True)
@@ -1379,7 +1379,7 @@ async def search_customers(message, query):
             WHERE LOWER(name) LIKE LOWER(%s)
                OR phone LIKE %s
                OR id::text = %s
-            LIMIT 10
+            LIMIT 30
         """
         
         # Execute search
