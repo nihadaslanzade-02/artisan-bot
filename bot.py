@@ -2677,4 +2677,3 @@ async def admin_webhook_handler(request):
         logger.error(f"Error in admin webhook handler: {e}")
         return web.json_response({'status': 'error', 'message': str(e)})
     
-

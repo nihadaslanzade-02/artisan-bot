@@ -3,20 +3,26 @@
 Configuration settings for the Artisan Booking Bot.
 """
 
+import os
+from dotenv import load_dotenv
+
+# .env faylını yüklə
+load_dotenv()
+
 # Telegram Bot Token (Get from BotFather)
-BOT_TOKEN = "7718178699:AAHjJQ-f4iSEjehzUtgP4yJh16ktvC96eYc"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Database Connection Parameters
 DB_CONFIG = {
-    "host": "localhost",
-    "database": "usta_bot_db",
-    "user": "postgres",
-    "password": "Bermud.1301",
-    "port": 5432
+    "host": os.getenv("DB_HOST", "localhost"),
+    "database": os.getenv("DB_NAME", "usta_bot_db"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", ""),
+    "port": int(os.getenv("DB_PORT", 5432))
 }
 
 # Google Maps API for Reverse Geocoding (Optional)
-GOOGLE_MAPS_API_KEY = "AIzaSyDJ8ZhltxVThrGBPQhQGiZd1dVDu-_MJvI"
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 # Commission Rates (in percentage)
 # Used for calculating admin fee on orders

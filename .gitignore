@@ -1,6 +1,21 @@
-__pycache__/
-*.pyc
-*.env
+# Sensitive data
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
 venv/
+env/
+ENV/
+
+# IDE files
 .idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
