@@ -64,12 +64,12 @@ MAX_SEARCH_RADIUS = 50  # km - Maximum allowed search radius
 # Time Settings
 TIME_SLOTS_START_HOUR = 8  
 TIME_SLOTS_END_HOUR = 21 
-TIME_SLOT_INTERVAL = 30  # minutes - Interval between time slots
+TIME_SLOT_INTERVAL = 10  # minutes - Interval between time slots
 
 # User Experience Settings
 MAX_NEARBY_ARTISANS = 10  # Maximum number of nearby artisans to display
 ARTISAN_MIN_RATING = 0  # Minimum rating for artisans to be shown in search
-DAYS_AHEAD_BOOKING = 1  # How many days ahead users can book services
+DAYS_AHEAD_BOOKING = 2  # How many days ahead users can book services
 
 # Registration Settings
 PHONE_VALIDATION_REGEX = r'^\+?994\d{9}$|^0\d{9}$'  # Regex pattern for valid Azerbaijani phone numbers
