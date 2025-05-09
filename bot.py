@@ -79,10 +79,19 @@ async def on_startup(dp):
     # Run database setup
     db_setup.setup_database()
     
+    # Register all notification and service modules
+    try:
+        import notification_service
+        import payment_service
+        import order_status_service
+        logger.info("Service modules loaded successfully")
+    except Exception as e:
+        logger.error(f"Error loading service modules: {e}")
+    
+    # Start scheduled tasks
+    asyncio.create_task(scheduled_tasks())
+    
     logger.info("Bot started successfully!")
-
-# bot.py faylında 
-# on_startup funksiyasından sonra bu kodu əlavə et/yenilə
 
 # Start command handler
 @dp.message_handler(commands=['start'])
@@ -93,7 +102,7 @@ async def start(message: types.Message):
     """
     try:
         user_id = message.from_user.id
-        is_admin = user_id in BOT_ADMINS  # Admin olub-olmadığını yoxla
+        is_admin_user = user_id in BOT_ADMINS  # Admin olub-olmadığını yoxla
         
         # Check if user is a blocked customer
         customer = get_customer_by_telegram_id(user_id)
@@ -122,7 +131,7 @@ async def start(message: types.Message):
         keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Ustayam"))
         
         # Admin üçün xüsusi düymə əlavə et
-        if is_admin:
+        if is_admin_user:
             keyboard.add(KeyboardButton("👨‍💼 Admin"))
         
         # Send welcome message
@@ -172,7 +181,7 @@ async def help_command(message: types.Message):
             "• Bot haqqında məlumat üçün /help yazın\n"
             "• Yenidən başlamaq üçün /start yazın\n\n"
             
-            "❓ Suallarınız olarsa, bizə yazın: +994506606351"
+            "❓ Suallarınız olarsa, bizə yazın: support@ustabot.az"
         )
         
         await message.answer(
@@ -186,12 +195,7 @@ async def help_command(message: types.Message):
             "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
         )
 
-
-    
-
-# bot.py'de ekleyin veya düzenleyin
-
-# Admin rolü seçildiğinde gösterilecek handler
+# Admin rolü seçildiğində gösterilecek handler
 @dp.message_handler(lambda message: message.text == "👨‍💼 Admin")
 async def admin_panel(message: types.Message):
     """Handle when user selects Admin role"""
@@ -325,6 +329,7 @@ async def show_admin_receipts(message):
             else:
                 status_text = "⏳ Gözləyir"
             
+            # Payment method info - Fix here: first try op_payment_method, then fallback to payment_method
             payment_method = receipt.get('op_payment_method') or receipt.get('payment_method', 'Təyin edilməyib')
             if payment_method == 'card':
                 payment_info = "💳 Müştəri tərəfindən kartla ödəniş"
@@ -455,7 +460,7 @@ async def show_admin_orders(message):
             JOIN customers c ON o.customer_id = c.id
             JOIN artisans a ON o.artisan_id = a.id
             ORDER BY o.created_at DESC
-            LIMIT 30
+            LIMIT 10
         """
         
         orders = execute_query(query, fetchall=True, dict_cursor=True)
@@ -542,8 +547,6 @@ async def show_admin_orders(message):
         logger.error(f"Error in show_admin_orders: {e}")
         await message.answer("❌ Sifarişlər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
-# bot.py dosyasına ekleyin
-
 async def show_admin_users(message):
     """Show users for admin to manage"""
     try:
@@ -565,9 +568,6 @@ async def show_admin_users(message):
     except Exception as e:
         logger.error(f"Error in show_admin_users: {e}")
         await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-
-
-# bot.py dosyasına ekleyin
 
 async def show_admin_stats(message):
     """Show system statistics for admin"""
@@ -644,9 +644,6 @@ async def show_admin_stats(message):
         logger.error(f"Error in show_admin_stats: {e}")
         await message.answer("❌ Statistikalar yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
-
-# bot.py dosyasına ekleyin
-
 @dp.callback_query_handler(lambda c: c.data.startswith(('order_', 'filter_orders_')))
 async def order_actions_handler(callback_query: types.CallbackQuery):
     """Handle order-related actions"""
@@ -690,8 +687,6 @@ async def order_actions_handler(callback_query: types.CallbackQuery):
         await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
         await callback_query.answer()
 
-# bot.py dosyasına ekleyin
-
 @dp.callback_query_handler(lambda c: c.data in ['show_customers', 'show_artisans', 'search_user'])
 async def user_actions_handler(callback_query: types.CallbackQuery):
     """Handle user-related actions"""
@@ -718,8 +713,6 @@ async def user_actions_handler(callback_query: types.CallbackQuery):
         logger.error(f"Error in user_actions_handler: {e}")
         await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
         await callback_query.answer()
-
-# bot.py dosyasına ekleyin
 
 async def filter_orders(message, filter_type):
     """Show filtered orders based on type"""
@@ -855,9 +848,6 @@ async def show_order_details(message, order_id):
             payment_text = payment_status
         
         # Create detailed order text
-        # bot.py dosyasına ekleyin - show_order_details fonksiyonunun devamı
-
-        # Create detailed order text
         details_text = (
             f"📋 *Sifariş #{order_id} Detalları*\n\n"
             f"📅 *Tarix və saat:* {formatted_date}\n"
@@ -912,8 +902,6 @@ async def show_order_details(message, order_id):
     except Exception as e:
         logger.error(f"Error in show_order_details: {e}")
         await message.answer("❌ Sifariş detalları yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-
-# bot.py dosyasına ekleyin
 
 async def show_order_payment(message, order_id):
     """Show payment details for an order"""
@@ -999,9 +987,6 @@ async def show_order_payment(message, order_id):
     except Exception as e:
         logger.error(f"Error in show_order_payment: {e}")
         await message.answer("❌ Ödəniş detalları yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-
-
-# bot.py dosyasına ekleyin
 
 async def admin_accept_order(message, order_id):
     """Admin accepts an order"""
@@ -1108,9 +1093,6 @@ async def notify_about_order_status_change(order_id, status):
         
     except Exception as e:
         logger.error(f"Error in notify_about_order_status_change: {e}")
-
-
-# bot.py dosyasına ekleyin
 
 async def show_customers_list(message):
     """Show list of customers"""
@@ -1285,9 +1267,6 @@ async def show_artisans_list(message):
         logger.error(f"Error in show_artisans_list: {e}")
         await message.answer("❌ Ustalar yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
-
-# bot.py dosyasına ekleyin
-
 async def start_user_search(message):
     """Start user search process"""
     try:
@@ -1314,10 +1293,6 @@ async def select_search_type(callback_query: types.CallbackQuery, state: FSMCont
         
         search_type = callback_query.data.split('_')[-1]
         
-        # Create state class if not exists
-        class AdminSearchState(StatesGroup):
-            waiting_for_query = State()
-            
         # Store search type in state
         async with state.proxy() as data:
             data['search_type'] = search_type
@@ -1379,7 +1354,7 @@ async def search_customers(message, query):
             WHERE LOWER(name) LIKE LOWER(%s)
                OR phone LIKE %s
                OR id::text = %s
-            LIMIT 30
+            LIMIT 10
         """
         
         # Execute search
@@ -1501,7 +1476,7 @@ async def search_artisans(message, query):
                 f"Telefon: {artisan['phone']}\n"
                 f"Şəhər: {artisan.get('city', 'Təyin edilməyib')}\n"
                 f"Xidmət: {artisan['service']}\n"
-                                f"Reytinq: {rating_text} {rating_stars}\n"
+                f"Reytinq: {rating_text} {rating_stars}\n"
                 f"Qeydiyyat tarixi: {formatted_date}\n"
                 f"Status: {status_emoji} {status_text}"
             )
@@ -1528,8 +1503,6 @@ async def search_artisans(message, query):
     except Exception as e:
         logger.error(f"Error in search_artisans: {e}")
         await message.answer("❌ Axtarış zamanı xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-
-# bot.py dosyasına ekleyin
 
 @dp.callback_query_handler(lambda c: c.data.startswith(('block_customer_', 'unblock_customer_', 'block_artisan_', 'unblock_artisan_')))
 async def user_block_actions(callback_query: types.CallbackQuery):
@@ -1575,11 +1548,6 @@ async def show_block_customer_form(message, customer_id):
             await message.answer(f"❌ Müştəri #{customer_id} tapılmadı.")
             return
         
-        # Create state class if not exists
-        class AdminBlockState(StatesGroup):
-            waiting_for_reason = State()
-            waiting_for_payment = State()
-            
         # Store customer ID in state
         async with dp.current_state().proxy() as data:
             data['user_type'] = 'customer'
@@ -1611,11 +1579,6 @@ async def show_block_artisan_form(message, artisan_id):
             await message.answer(f"❌ Usta #{artisan_id} tapılmadı.")
             return
         
-        # Create state class if not exists
-        class AdminBlockState(StatesGroup):
-            waiting_for_reason = State()
-            waiting_for_payment = State()
-            
         # Store artisan ID in state
         async with dp.current_state().proxy() as data:
             data['user_type'] = 'artisan'
@@ -1811,8 +1774,6 @@ async def unblock_artisan_action(message, artisan_id):
         logger.error(f"Error in unblock_artisan_action: {e}")
         await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
-# bot.py dosyasına ekleyin
-
 @dp.callback_query_handler(lambda c: c.data.startswith(('contact_customer_', 'contact_artisan_')))
 async def contact_user_actions(callback_query: types.CallbackQuery):
     """Handle contacting users"""
@@ -1826,10 +1787,6 @@ async def contact_user_actions(callback_query: types.CallbackQuery):
         user_type = action_parts[1]  # customer or artisan
         user_id = int(action_parts[2])
         
-        # Create state class if not exists
-        class AdminContactState(StatesGroup):
-            waiting_for_message = State()
-            
         # Store user info in state
         async with dp.current_state().proxy() as data:
             data['user_type'] = user_type
@@ -1926,8 +1883,6 @@ async def process_admin_message(message: types.Message, state: FSMContext):
         logger.error(f"Error in process_admin_message: {e}")
         await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
         await state.finish()
-
-# bot.py dosyasına ekleyin
 
 @dp.callback_query_handler(lambda c: c.data.startswith(('customer_orders_', 'artisan_orders_')))
 async def user_orders_actions(callback_query: types.CallbackQuery):
@@ -2110,8 +2065,6 @@ async def show_artisan_orders(message, artisan_id):
         logger.error(f"Error in show_artisan_orders: {e}")
         await message.answer("❌ Sifarişlər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
-# bot.py dosyasına ekleyin
-
 @dp.callback_query_handler(lambda c: c.data == "back_to_admin")
 async def back_to_admin_menu(callback_query: types.CallbackQuery):
     """Return to admin main menu"""
@@ -2144,7 +2097,6 @@ async def back_to_admin_menu(callback_query: types.CallbackQuery):
             "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
         )
         await callback_query.answer()
-
 
 @dp.callback_query_handler(lambda c: c.data == "pay_customer_fine")
 async def pay_customer_fine_callback(callback_query: types.CallbackQuery):
@@ -2303,7 +2255,7 @@ async def process_card_number_input(message: types.Message):
         card_number = re.sub(r'\s', '', message.text)
         
         # Basic validation (this can be enhanced)
-        if not re.match(r'^\d{16,19}$', card_number):
+        if not re.match(r'^\\d{16,19}$', card_number):
             await message.answer(
                 "❌ Düzgün kart nömrəsi daxil edin (16-19 rəqəm). Zəhmət olmasa, yenidən cəhd edin:"
             )
@@ -2344,7 +2296,6 @@ async def process_card_number_input(message: types.Message):
             "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
         )
 
-# Əmr bələdçisi funksiyasını əlavə et
 @dp.message_handler(lambda message: message.text == "ℹ️ Əmr bələdçisi")
 async def show_command_guide(message: types.Message):
     """Display command guide information"""
@@ -2355,7 +2306,6 @@ async def show_command_guide(message: types.Message):
             "*Əsas Əmrlər:*\n"
             "/start - Botu başlatmaq və yenidən rol seçmək\n"
             "/help - Kömək məlumatlarını göstərmək\n\n"
-
             
             "*Müştərilər üçün Əmrlər:*\n"
             "✅ Yeni sifariş ver - Yeni sifariş yaratmaq\n"
@@ -2372,9 +2322,7 @@ async def show_command_guide(message: types.Message):
             
             "*Bot haqqında:*\n"
             "Bu bot müştərilərə usta sifarişi verməyə və ustalara müştəri tapmağa kömək edir. "
-            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur.\n\n"
-
-            "*Burada istifadəçilər üçün təlimat videosunun linki yerləşdiriləcək.*\n"
+            "Sifarişlər, ödənişlər və rəylər sistem tərəfindən idarə olunur."
         )
         
         # Əsas menyuya qayıtmaq düyməsini əlavə edirik
@@ -2389,7 +2337,6 @@ async def show_command_guide(message: types.Message):
             "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
         )
 
-        
 async def show_role_selection(message: types.Message):
     """Show role selection menu"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -2426,11 +2373,6 @@ async def initiate_refund_request(callback_query: types.CallbackQuery, state: FS
             f"Sifariş #{order_id} üçün qaytarılacaq məbləği AZN ilə daxil edin (məs: 25):",
             parse_mode="Markdown"
         )
-        
-        # Create state class if not exists
-        class AdminRefundState(StatesGroup):
-            waiting_for_amount = State()
-            waiting_for_reason = State()
         
         # Set state to wait for amount
         await AdminRefundState.waiting_for_amount.set()
@@ -2519,8 +2461,6 @@ async def process_refund_reason(message: types.Message, state: FSMContext):
         await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
         await state.finish()
 
-
-
 # Register all handlers
 def register_all_handlers():
     """Register all message handlers"""
@@ -2562,8 +2502,6 @@ def register_all_handlers():
     dp.register_message_handler(process_block_payment, state=AdminBlockState.waiting_for_payment)
     dp.register_message_handler(process_admin_message, state=AdminContactState.waiting_for_message)
     
-
-
     dp.register_callback_query_handler(initiate_refund_request, lambda c: c.data.startswith('request_refund_'), state="*")
     dp.register_message_handler(process_refund_amount, state=AdminRefundState.waiting_for_amount)
     dp.register_message_handler(process_refund_reason, state=AdminRefundState.waiting_for_reason)
@@ -2571,39 +2509,6 @@ def register_all_handlers():
     dp.register_callback_query_handler(mark_refund_completed, lambda c: c.data.startswith('refund_completed_'))
     
     logger.info("All handlers registered successfully!")
-
-
-
-if __name__ == '__main__':
-    # Register all handlers
-    register_all_handlers()
-    
-    # Start the bot
-    executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
-
-
-# In bot.py
-async def on_startup(dp):
-    """Execute actions on startup"""
-    logger.info("Starting bot...")
-    
-    # Run database setup
-    db_setup.setup_database()
-    
-    # Register all notification and service modules
-    # These imports should be here, not at the top of the file
-    try:
-        import notification_service
-        import payment_service
-        import order_status_service
-        logger.info("Service modules loaded successfully")
-    except Exception as e:
-        logger.error(f"Error loading service modules: {e}")
-    
-    logger.info("Bot started successfully!")
-
-
-# In bot.py, after on_startup
 
 async def scheduled_tasks():
     """Run scheduled tasks at regular intervals"""
@@ -2619,9 +2524,6 @@ async def scheduled_tasks():
             logger.error(f"Error in scheduled tasks: {e}")
             # Sleep for 5 minutes in case of error
             await asyncio.sleep(5 * 60)
-
-# In on_startup function, add:
-asyncio.create_task(scheduled_tasks())
 
 async def admin_webhook_handler(request):
     """Handle webhooks from admin panel"""
@@ -2677,3 +2579,9 @@ async def admin_webhook_handler(request):
         logger.error(f"Error in admin webhook handler: {e}")
         return web.json_response({'status': 'error', 'message': str(e)})
     
+if __name__ == '__main__':
+    # Register all handlers
+    register_all_handlers()
+    
+    # Start the bot
+    executor.start_polling(dp, on_startup=on_startup, skip_updates=True)

@@ -1090,10 +1090,10 @@ def register_handlers(dp):
             
             # Save price to order in database using the main function
             success = set_order_price(
-                order_id=order_id,
-                price=price,
-                admin_fee=admin_fee,
-                artisan_amount=artisan_amount
+                order_id,
+                price,
+                admin_fee,
+                artisan_amount
             )
             
             if success:

@@ -3,12 +3,11 @@
 import math
 import logging
 from typing import List, Tuple, Dict, Any, Optional, Union
-import psycopg2.extras
 import json
 import aiohttp
 import asyncio
 from config import GOOGLE_MAPS_API_KEY  # Google API key for reverse geocoding
-from db import get_nearby_artisans
+from db import get_connection, execute_query, get_nearby_artisans
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -198,7 +197,6 @@ async def get_location_name(latitude: float, longitude: float) -> Optional[str]:
 # -------------------------
 
 def find_nearby_artisans(
-    conn, 
     latitude: float, 
     longitude: float, 
     radius: float = 10.0, 
@@ -209,11 +207,9 @@ def find_nearby_artisans(
     """
     Find artisans near a specific location, with optional filtering by service type.
     
-    This function uses a bounding box approach for initial DB filtering,
-    then applies the more accurate Haversine formula for precise distance calculation.
+    This function uses the get_nearby_artisans function from db.py with the MySQL database.
     
     Args:
-        conn: Database connection
         latitude (float): Customer's latitude
         longitude (float): Customer's longitude
         radius (float): Search radius in kilometers (default: 10km)
@@ -230,88 +226,29 @@ def find_nearby_artisans(
         return []
     
     try:
-        # Approximate 1 degree of latitude/longitude in kilometers (varies by latitude)
-        km_per_degree_lat = 111.0
-        km_per_degree_lon = 111.0 * math.cos(math.radians(latitude))
+        # Use the get_nearby_artisans function from db.py
+        nearby_artisans = get_nearby_artisans(latitude, longitude, radius, service, subservice)
         
-        # Calculate the bounding box with a slightly larger area for better results
-        # (We'll filter exact distances later with Haversine)
-        lat_delta = (radius * 1.2) / km_per_degree_lat
-        lon_delta = (radius * 1.2) / km_per_degree_lon
+        # Process results to add formatted distance
+        artisans_with_formatted_distance = []
         
-        lat_min = latitude - lat_delta
-        lat_max = latitude + lat_delta
-        lon_min = longitude - lon_delta
-        lon_max = longitude + lon_delta
-        
-        # Build the SQL query with proper filtering
-        query = """
-            SELECT a.id, a.name, a.phone, a.service, a.location, 
-                   a.latitude, a.longitude, a.rating
-            FROM artisans a
-            WHERE a.active = TRUE 
-              AND a.latitude BETWEEN %s AND %s
-              AND a.longitude BETWEEN %s AND %s
-        """
-        
-        params = [lat_min, lat_max, lon_min, lon_max]
-        
-        # Add service filter if provided
-        if service:
-            query += " AND a.service = %s"
-            params.append(service)
-        
-        # Add subservice filter if provided
-        if subservice:
-            query += """
-                AND EXISTS (
-                    SELECT 1 FROM artisan_price_ranges apr
-                    JOIN subservices s ON apr.subservice_id = s.id
-                    WHERE apr.artisan_id = a.id 
-                      AND s.name = %s 
-                      AND apr.is_active = TRUE
-                )
-            """
-            params.append(subservice)
-        
-        # Execute the query
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute(query, params)
-            results = cursor.fetchall()
-        
-        # Calculate actual distances using the Haversine formula
-        artisans_with_distance = []
-        for row in results:
-            artisan_lat = row['latitude']
-            artisan_lon = row['longitude']
+        for artisan in nearby_artisans:
+            artisan_data = dict(artisan)
             
-            # Skip if no location data
-            if artisan_lat is None or artisan_lon is None:
-                continue
+            # Format distance if it exists
+            if 'distance' in artisan_data:
+                artisan_data['distance_text'] = format_distance(artisan_data['distance'])
             
-            # Calculate precise distance
-            distance = calculate_distance(latitude, longitude, artisan_lat, artisan_lon)
-            
-            # Only include artisans within the actual radius
-            if distance <= radius:
-                # Convert to regular dict and add distance
-                artisan_data = dict(row)
-                artisan_data['distance'] = round(distance, 2)
-                artisan_data['distance_text'] = format_distance(distance)
-                artisans_with_distance.append(artisan_data)
+            artisans_with_formatted_distance.append(artisan_data)
         
-        # Sort by distance (ascending)
-        artisans_with_distance.sort(key=lambda x: x['distance'])
-        
-        # Apply limit
-        return artisans_with_distance[:limit]
+        # Apply limit and return
+        return artisans_with_formatted_distance[:limit]
         
     except Exception as e:
         logger.error(f"Error finding nearby artisans: {e}")
         return []
 
 def find_available_artisans_by_service(
-    conn,
     service: str,
     subservice: str = None,
     latitude: float = None, 
@@ -322,7 +259,6 @@ def find_available_artisans_by_service(
     Find available artisans by service type, optionally sorted by distance if coordinates provided.
     
     Args:
-        conn: Database connection
         service (str): Type of service required
         subservice (str, optional): Specific subservice required
         latitude (float, optional): Customer's latitude for distance calculation
@@ -356,21 +292,19 @@ def find_available_artisans_by_service(
             """
             params.append(subservice)
         
-        # Execute the query
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute(query, params)
-            results = cursor.fetchall()
+        # Execute the query using the db.py function
+        results = execute_query(query, params, fetchall=True, dict_cursor=True)
         
         artisans_list = []
         
         # Process results and calculate distance if coordinates provided
-        for row in results:
-            artisan_data = dict(row)
+        for artisan in results:
+            artisan_data = dict(artisan)
             
             # Calculate distance if coordinates provided
             if latitude is not None and longitude is not None:
-                artisan_lat = row['latitude']
-                artisan_lon = row['longitude']
+                artisan_lat = artisan['latitude']
+                artisan_lon = artisan['longitude']
                 
                 if artisan_lat is not None and artisan_lon is not None:
                     distance = calculate_distance(latitude, longitude, artisan_lat, artisan_lon)
@@ -393,5 +327,3 @@ def find_available_artisans_by_service(
     except Exception as e:
         logger.error(f"Error finding artisans by service: {e}")
         return []
-    
-

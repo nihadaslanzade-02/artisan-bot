@@ -1,12 +1,13 @@
 # db.py
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import mysql.connector
+from mysql.connector import Error
+from mysql.connector.cursor import MySQLCursorDict
 import math
 from datetime import datetime
-from config import DB_CONFIG, COMMISSION_RATES
-from psycopg2.pool import SimpleConnectionPool
+import json
 import logging
+from config import DB_CONFIG, COMMISSION_RATES
 
 # Set up logging
 logging.basicConfig(
@@ -17,11 +18,37 @@ logger = logging.getLogger(__name__)
 
 
 def get_connection():
-    """Establish and return a connection to the database"""
-    return psycopg2.connect(**DB_CONFIG)
+    """Establish and return a connection to the MySQL database"""
+    try:
+        conn = mysql.connector.connect(
+            host=DB_CONFIG["host"],
+            database=DB_CONFIG["database"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"],
+            port=DB_CONFIG.get("port", 3306),
+            auth_plugin='mysql_native_password',  # Bu satırı ekleyin
+            use_pure=True  # Bu satırı ekleyin
+        )
+        return conn
+    except Error as e:
+        logger.error(f"Error connecting to MySQL database: {e}")
+        raise e
+
 
 def execute_query(query, params=None, fetchone=False, fetchall=False, commit=False, dict_cursor=False):
-    """Execute a database query with error handling and connection management"""
+    """Execute a database query with error handling and connection management
+    
+    Args:
+        query (str): SQL query to execute
+        params (tuple or list): Parameters for the query
+        fetchone (bool): Whether to fetch one result
+        fetchall (bool): Whether to fetch all results
+        commit (bool): Whether to commit the transaction
+        dict_cursor (bool): Whether to use a dictionary cursor
+        
+    Returns:
+        Mixed: Query results or None
+    """
     conn = None
     cursor = None
     result = None
@@ -29,11 +56,11 @@ def execute_query(query, params=None, fetchone=False, fetchall=False, commit=Fal
     try:
         conn = get_connection()
         if dict_cursor:
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor = conn.cursor(dictionary=True)
         else:
             cursor = conn.cursor()
             
-        cursor.execute(query, params)
+        cursor.execute(query, params or ())
         
         if fetchone:
             result = cursor.fetchone()
@@ -44,16 +71,17 @@ def execute_query(query, params=None, fetchone=False, fetchall=False, commit=Fal
             conn.commit()
             
         return result
-    except psycopg2.Error as e:
+    except Error as e:
         if conn:
             conn.rollback()
-        print(f"Database error: {e}")
+        logger.error(f"Database error: {e}")
         raise e
     finally:
         if cursor:
             cursor.close()
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
+
 
 # -------------------------
 # CUSTOMER RELATED FUNCTIONS
@@ -75,7 +103,7 @@ def get_customer_by_telegram_id(telegram_id):
     
     result = execute_query(query, (telegram_id,), fetchone=True, dict_cursor=True)
     
-    return dict(result) if result else None
+    return result
 
 
 def get_customer_by_id(customer_id):
@@ -94,7 +122,8 @@ def get_customer_by_id(customer_id):
     
     result = execute_query(query, (customer_id,), fetchone=True, dict_cursor=True)
     
-    return dict(result) if result else None
+    return result
+
 
 def create_customer(telegram_id, name, phone=None, city=None):
     """Create a new customer and return their ID
@@ -110,13 +139,28 @@ def create_customer(telegram_id, name, phone=None, city=None):
     """
     query = """
         INSERT INTO customers (telegram_id, name, phone, city, created_at)
-        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-        RETURNING id
+        VALUES (%s, %s, %s, %s, NOW())
     """
     
-    result = execute_query(query, (telegram_id, name, phone, city), fetchone=True, commit=True)
-    
-    return result[0] if result else None
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, (telegram_id, name, phone, city))
+        conn.commit()
+        return cursor.lastrowid
+    except Error as e:
+        logger.error(f"Error creating customer: {e}")
+        if conn:
+            conn.rollback()
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_or_create_customer(telegram_id, name, phone=None, city=None):
     """Get customer ID by Telegram ID or create if not exists
@@ -137,6 +181,7 @@ def get_or_create_customer(telegram_id, name, phone=None, city=None):
         return customer_id
     
     return customer['id']
+
 
 def update_customer_profile(telegram_id, data):
     """Update customer profile information
@@ -172,8 +217,9 @@ def update_customer_profile(telegram_id, data):
         execute_query(query, params, commit=True)
         return True
     except Exception as e:
-        print(f"Error updating customer profile: {e}")
+        logger.error(f"Error updating customer profile: {e}")
         return False
+
 
 def get_customer_orders(customer_id):
     """Get orders for a specific customer
@@ -187,7 +233,7 @@ def get_customer_orders(customer_id):
     query = """
         SELECT o.*, a.name as artisan_name, a.phone as artisan_phone,
                op.amount, op.payment_status, op.payment_method,
-               o.status, o.subservice  -- Bunları ekleyelim
+               o.status, o.subservice
         FROM orders o
         JOIN artisans a ON o.artisan_id = a.id
         LEFT JOIN order_payments op ON o.id = op.order_id
@@ -196,6 +242,7 @@ def get_customer_orders(customer_id):
     """
     
     return execute_query(query, (customer_id,), fetchall=True, dict_cursor=True)
+
 
 # -------------------------
 # ARTISAN RELATED FUNCTIONS
@@ -218,6 +265,7 @@ def get_artisan_by_telegram_id(telegram_id):
     
     return result[0] if result else None
 
+
 def get_artisan_by_id(artisan_id):
     """Get artisan information by ID
     
@@ -236,7 +284,8 @@ def get_artisan_by_id(artisan_id):
     
     result = execute_query(query, (artisan_id,), fetchone=True, dict_cursor=True)
     
-    return dict(result) if result else None
+    return result
+
 
 def check_artisan_exists(telegram_id=None, phone=None, exclude_id=None):
     """Check if an artisan with the given parameters exists
@@ -275,6 +324,7 @@ def check_artisan_exists(telegram_id=None, phone=None, exclude_id=None):
     result = execute_query(query, params, fetchone=True)
     return result is not None
 
+
 def create_artisan(telegram_id, name, phone, service, location=None, city=None, latitude=None, longitude=None):
     """Create a new artisan and return their ID
     
@@ -294,18 +344,28 @@ def create_artisan(telegram_id, name, phone, service, location=None, city=None, 
     query = """
         INSERT INTO artisans (telegram_id, name, phone, service, location, city, 
                               latitude, longitude, active, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
-        RETURNING id
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW())
     """
     
-    result = execute_query(
-        query, 
-        (telegram_id, name, phone, service, location, city, latitude, longitude),
-        fetchone=True,
-        commit=True
-    )
-    
-    return result[0] if result else None
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, (telegram_id, name, phone, service, location, city, latitude, longitude))
+        conn.commit()
+        return cursor.lastrowid
+    except Error as e:
+        logger.error(f"Error creating artisan: {e}")
+        if conn:
+            conn.rollback()
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_or_create_artisan(telegram_id, name, phone, service, location=None, city=None, latitude=None, longitude=None):
     """Get artisan ID by Telegram ID or create if not exists
@@ -346,6 +406,7 @@ def get_or_create_artisan(telegram_id, name, phone, service, location=None, city
         
     return artisan_id
 
+
 def update_artisan_profile(artisan_id, data):
     """Update artisan profile information
     
@@ -380,8 +441,9 @@ def update_artisan_profile(artisan_id, data):
         execute_query(query, params, commit=True)
         return True
     except Exception as e:
-        print(f"Error updating artisan profile: {e}")
+        logger.error(f"Error updating artisan profile: {e}")
         return False
+
 
 def update_artisan_location(artisan_id, latitude, longitude, location_name=None, city=None):
     """Update an artisan's location
@@ -420,8 +482,9 @@ def update_artisan_location(artisan_id, latitude, longitude, location_name=None,
         execute_query(query, params, commit=True)
         return True
     except Exception as e:
-        print(f"Error updating artisan location: {e}")
+        logger.error(f"Error updating artisan location: {e}")
         return False
+
 
 def toggle_artisan_active_status(artisan_id):
     """Toggle an artisan's active status
@@ -439,7 +502,7 @@ def toggle_artisan_active_status(artisan_id):
     if not result:
         return False, False
         
-    current_status = result[0]
+    current_status = bool(result[0])
     new_status = not current_status
     
     # Update status
@@ -449,8 +512,9 @@ def toggle_artisan_active_status(artisan_id):
         execute_query(update_query, (new_status, artisan_id), commit=True)
         return True, new_status
     except Exception as e:
-        print(f"Error toggling artisan status: {e}")
+        logger.error(f"Error toggling artisan status: {e}")
         return False, current_status
+
 
 def update_artisan_service_and_reset_prices(artisan_id, service):
     """Update artisan's service and reset all price ranges
@@ -485,11 +549,12 @@ def update_artisan_service_and_reset_prices(artisan_id, service):
     except Exception as e:
         if conn:
             conn.rollback()
-        print(f"Error updating artisan service: {e}")
+        logger.error(f"Error updating artisan service: {e}")
         return False
     finally:
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
+
 
 def get_artisan_blocked_status(artisan_id):
     """Check if an artisan is blocked and get the reason
@@ -515,6 +580,7 @@ def get_artisan_blocked_status(artisan_id):
     else:
         return False, None, 0
 
+
 def block_artisan(artisan_id, reason, required_payment):
     """Block an artisan
     
@@ -533,7 +599,7 @@ def block_artisan(artisan_id, reason, required_payment):
     block_query = """
         INSERT INTO artisan_blocks 
         (artisan_id, is_blocked, block_reason, required_payment, created_at)
-        VALUES (%s, TRUE, %s, %s, CURRENT_TIMESTAMP)
+        VALUES (%s, TRUE, %s, %s, NOW())
     """
     
     conn = None
@@ -549,11 +615,12 @@ def block_artisan(artisan_id, reason, required_payment):
     except Exception as e:
         if conn:
             conn.rollback()
-        print(f"Error blocking artisan: {e}")
+        logger.error(f"Error blocking artisan: {e}")
         return False
     finally:
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
+
 
 def unblock_artisan(artisan_id):
     """Unblock an artisan
@@ -570,7 +637,7 @@ def unblock_artisan(artisan_id):
     # Update block record
     block_query = """
         UPDATE artisan_blocks
-        SET is_blocked = FALSE, unblocked_at = CURRENT_TIMESTAMP
+        SET is_blocked = FALSE, unblocked_at = NOW()
         WHERE artisan_id = %s AND is_blocked = TRUE
     """
     
@@ -587,11 +654,12 @@ def unblock_artisan(artisan_id):
     except Exception as e:
         if conn:
             conn.rollback()
-        print(f"Error unblocking artisan: {e}")
+        logger.error(f"Error unblocking artisan: {e}")
         return False
     finally:
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
+
 
 def save_fine_receipt(artisan_id, file_id):
     """Save fine payment receipt
@@ -606,16 +674,22 @@ def save_fine_receipt(artisan_id, file_id):
     query = """
         INSERT INTO fine_receipts 
         (artisan_id, file_id, status, created_at)
-        VALUES (%s, %s, 'pending', CURRENT_TIMESTAMP)
-        RETURNING id
+        VALUES (%s, %s, 'pending', NOW())
     """
     
     try:
-        result = execute_query(query, (artisan_id, file_id), fetchone=True, commit=True)
-        return bool(result)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, (artisan_id, file_id))
+        conn.commit()
+        return cursor.lastrowid is not None
     except Exception as e:
-        print(f"Error saving fine receipt: {e}")
+        logger.error(f"Error saving fine receipt: {e}")
         return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 # -------------------------
 # SERVICES AND SUBSERVICES
@@ -632,6 +706,7 @@ def get_services():
     
     # Extract service names from result tuples
     return [row[0] for row in result] if result else []
+
 
 def get_subservices(service_name):
     """Get subservices for a specific service
@@ -655,6 +730,7 @@ def get_subservices(service_name):
     # Extract subservice names from result tuples
     return [row[0] for row in result] if result else []
 
+
 def get_artisan_price_ranges(artisan_id, subservice=None):
     """Get price ranges for an artisan's services
     
@@ -676,7 +752,7 @@ def get_artisan_price_ranges(artisan_id, subservice=None):
         """
         
         result = execute_query(query, (artisan_id, subservice), fetchone=True, dict_cursor=True)
-        return dict(result) if result else None
+        return result
     else:
         # Get all price ranges
         query = """
@@ -689,6 +765,7 @@ def get_artisan_price_ranges(artisan_id, subservice=None):
         
         result = execute_query(query, (artisan_id,), fetchall=True, dict_cursor=True)
         return result if result else []
+
 
 def update_artisan_price_range(artisan_id, subservice, min_price, max_price):
     """Update or create price range for a specific subservice
@@ -733,14 +810,15 @@ def update_artisan_price_range(artisan_id, subservice, min_price, max_price):
             insert_query = """
                 INSERT INTO artisan_price_ranges 
                 (artisan_id, subservice_id, min_price, max_price, is_active, created_at)
-                VALUES (%s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, TRUE, NOW())
             """
             execute_query(insert_query, (artisan_id, subservice_id, min_price, max_price), commit=True)
             
         return True
     except Exception as e:
-        print(f"Error updating price range: {e}")
+        logger.error(f"Error updating price range: {e}")
         return False
+
 
 def get_artisan_by_service(service):
     """Get artisans providing a specific service
@@ -758,6 +836,7 @@ def get_artisan_by_service(service):
     """
     
     return execute_query(query, (service,), fetchall=True)
+
 
 def get_nearby_artisans(latitude, longitude, radius=10, service=None, subservice=None):
     """Get artisans near the specified location within radius km
@@ -823,6 +902,7 @@ def get_nearby_artisans(latitude, longitude, radius=10, service=None, subservice
     
     return nearby_artisans
 
+
 # -------------------------
 # ORDER RELATED FUNCTIONS
 # -------------------------
@@ -849,13 +929,8 @@ def insert_order(customer_id, artisan_id, service, date_time, note, latitude=Non
     query = """
     INSERT INTO orders (customer_id, artisan_id, service, date_time, note,
                    latitude, longitude, location_name, status, subservice, created_at)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-    RETURNING id
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
     """
-    
-    # Default status değeri fonksiyon imzasında tanımlanmıştır
-    # Bu satırı kaldırabilirsiniz çünkü artık gereksiz
-    # status = 'pending' 
     
     # Parse date_time string to datetime object if needed
     if isinstance(date_time, str):
@@ -866,14 +941,28 @@ def insert_order(customer_id, artisan_id, service, date_time, note, latitude=Non
             # If it's not in the expected format, keep it as is
             pass
     
-    result = execute_query(
-        query, 
-        (customer_id, artisan_id, service, date_time, note, latitude, longitude, location_name, status, subservice),
-        fetchone=True,
-        commit=True
-    )
-    
-    return result[0] if result else None
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            query,
+            (customer_id, artisan_id, service, date_time, note, latitude, longitude, location_name, status, subservice)
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        logger.error(f"Error inserting order: {e}")
+        if conn:
+            conn.rollback()
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_order_details(order_id):
     """Get detailed information about an order
@@ -907,7 +996,8 @@ def get_order_details(order_id):
     else:
         logger.warning(f"No order found with ID {order_id}")
     
-    return dict(result) if result else None 
+    return result
+
 
 def update_order_status(order_id, status):
     """Update the status of an order
@@ -929,7 +1019,7 @@ def update_order_status(order_id, status):
         
         # If status is 'completed', also update the completed_at timestamp
         if status == 'completed':
-            timestamp_query = "UPDATE orders SET completed_at = CURRENT_TIMESTAMP WHERE id = %s"
+            timestamp_query = "UPDATE orders SET completed_at = NOW() WHERE id = %s"
             execute_query(timestamp_query, (order_id,), commit=True)
         
         # Double check that the status was updated
@@ -943,6 +1033,7 @@ def update_order_status(order_id, status):
     except Exception as e:
         logger.error(f"Error updating order status: {e}")
         return False
+
 
 def get_artisan_active_orders(artisan_id):
     """Get active orders for a specific artisan
@@ -962,6 +1053,7 @@ def get_artisan_active_orders(artisan_id):
     """
     
     return execute_query(query, (artisan_id,), fetchall=True, dict_cursor=True)
+
 
 def set_order_price(order_id, price, admin_fee=None, artisan_amount=None):
     """Set the price for an order
@@ -995,38 +1087,50 @@ def set_order_price(order_id, price, admin_fee=None, artisan_amount=None):
     update_order_query = """
         UPDATE orders 
         SET price = %s, 
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = NOW()
         WHERE id = %s
     """
     
+    conn = None
+    cursor = None
     try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
         # Start with updating the orders table
-        execute_query(update_order_query, (price, order_id), commit=True)
+        cursor.execute(update_order_query, (price, order_id))
         
         # Check if payment record exists
-        check_query = "SELECT id FROM order_payments WHERE order_id = %s"
-        payment_exists = execute_query(check_query, (order_id,), fetchone=True)
+        cursor.execute("SELECT id FROM order_payments WHERE order_id = %s", (order_id,))
+        payment_exists = cursor.fetchone()
         
         if payment_exists:
             # Update existing payment record
-            update_query = """
+            cursor.execute(
+                """
                 UPDATE order_payments 
                 SET amount = %s, admin_fee = %s, artisan_amount = %s
                 WHERE order_id = %s
-            """
-            execute_query(update_query, (price, admin_fee, artisan_amount, order_id), commit=True)
+                """,
+                (price, admin_fee, artisan_amount, order_id)
+            )
         else:
             # Create new payment record
-            insert_query = """
+            cursor.execute(
+                """
                 INSERT INTO order_payments 
                 (order_id, amount, admin_fee, artisan_amount, payment_status, created_at)
-                VALUES (%s, %s, %s, %s, 'pending', CURRENT_TIMESTAMP)
-            """
-            execute_query(insert_query, (order_id, price, admin_fee, artisan_amount), commit=True)
+                VALUES (%s, %s, %s, %s, 'pending', NOW())
+                """,
+                (order_id, price, admin_fee, artisan_amount)
+            )
         
         # Verify price was set
-        verify_query = "SELECT price FROM orders WHERE id = %s"
-        verify_result = execute_query(verify_query, (order_id,), fetchone=True)
+        cursor.execute("SELECT price FROM orders WHERE id = %s", (order_id,))
+        verify_result = cursor.fetchone()
+        
+        conn.commit()
+        
         if verify_result and verify_result[0] is not None:
             logger.info(f"Price for order {order_id} set successfully to {price} AZN")
             return True
@@ -1036,7 +1140,15 @@ def set_order_price(order_id, price, admin_fee=None, artisan_amount=None):
             
     except Exception as e:
         logger.error(f"Error setting order price: {e}", exc_info=True)
+        if conn:
+            conn.rollback()
         return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def update_payment_method(order_id, payment_method):
     """Update the payment method for an order
@@ -1058,10 +1170,10 @@ def update_payment_method(order_id, payment_method):
         execute_query(query, (payment_method, order_id), commit=True)
         return True
     except Exception as e:
-        print(f"Error updating payment method: {e}")
+        logger.error(f"Error updating payment method: {e}")
         return False
 
-# save_payment_receipt fonksiyonunda şu değişiklikleri yapalım
+
 def save_payment_receipt(order_id, file_id):
     """Save payment receipt for an order"""
     try:
@@ -1091,31 +1203,15 @@ def save_payment_receipt(order_id, file_id):
                     """
                     UPDATE order_payments 
                     SET receipt_file_id = %s,
-                        receipt_uploaded_at = CURRENT_TIMESTAMP,
+                        receipt_uploaded_at = NOW(),
                         payment_status = 'pending',
-                        payment_date = CURRENT_TIMESTAMP,
+                        payment_date = NOW(),
                         receipt_verified = FALSE,
                         admin_payment_completed = FALSE
                     WHERE order_id = %s
-                    RETURNING id
                     """,
                     (file_id, order_id)
                 )
-                update_result = cursor.fetchone()
-                
-                if not update_result:
-                    logger.error(f"Failed to update payment record for order {order_id}")
-                    # Try direct update without returning
-                    cursor.execute(
-                        """
-                        UPDATE order_payments 
-                        SET receipt_file_id = %s,
-                            receipt_uploaded_at = CURRENT_TIMESTAMP,
-                            receipt_verified = FALSE
-                        WHERE order_id = %s
-                        """,
-                        (file_id, order_id)
-                    )
                 
                 # Also update the order payment status
                 cursor.execute(
@@ -1154,18 +1250,11 @@ def save_payment_receipt(order_id, file_id):
                     INSERT INTO order_payments 
                     (order_id, amount, admin_fee, artisan_amount, receipt_file_id, receipt_uploaded_at, 
                      payment_status, payment_method, payment_date, created_at, updated_at, receipt_verified)
-                    VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'pending', 'cash', CURRENT_TIMESTAMP, 
-                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE)
-                    RETURNING id
+                    VALUES (%s, %s, %s, %s, %s, NOW(), 'pending', 'cash', NOW(), 
+                            NOW(), NOW(), FALSE)
                     """,
                     (order_id, price, admin_fee, artisan_amount, file_id)
                 )
-                insert_result = cursor.fetchone()
-                
-                if not insert_result:
-                    logger.error(f"Failed to insert payment record for order {order_id}")
-                    conn.rollback()
-                    return False
             
             # Verify the receipt was actually saved
             cursor.execute("SELECT receipt_file_id FROM order_payments WHERE order_id = %s", (order_id,))
@@ -1188,13 +1277,14 @@ def save_payment_receipt(order_id, file_id):
             logger.error(f"Database error in save_payment_receipt: {e}", exc_info=True)
             return False
         finally:
-            if conn:
+            if conn and conn.is_connected():
                 conn.close()
             
     except Exception as e:
         logger.error(f"Error saving payment receipt: {e}", exc_info=True)
         return False
-    
+
+
 def confirm_payment(order_id, is_verified=True):
     """Confirm payment for an order
     
@@ -1210,7 +1300,7 @@ def confirm_payment(order_id, is_verified=True):
     query = """
         UPDATE order_payments 
         SET payment_status = %s,
-            payment_date = CURRENT_TIMESTAMP
+            payment_date = NOW()
         WHERE order_id = %s
     """
     
@@ -1218,8 +1308,9 @@ def confirm_payment(order_id, is_verified=True):
         execute_query(query, (status, order_id), commit=True)
         return True
     except Exception as e:
-        print(f"Error confirming payment: {e}")
+        logger.error(f"Error confirming payment: {e}")
         return False
+
 
 # -------------------------
 # USER CONTEXT FUNCTIONS
@@ -1235,10 +1326,8 @@ def set_user_context(telegram_id, context_data):
     Returns:
         bool: True if successful, False otherwise
     """
-    import json
-    
     try:
-        # Ensure we're storing a string in the database
+        # Ensure we're storing JSON in the database
         context_json = None
         
         if isinstance(context_data, dict):
@@ -1250,7 +1339,6 @@ def set_user_context(telegram_id, context_data):
                 else:
                     cleaned_data[key] = value
             
-            # Ensure we're serializing a valid dictionary
             context_json = json.dumps(cleaned_data)
             
         elif isinstance(context_data, str):
@@ -1269,13 +1357,32 @@ def set_user_context(telegram_id, context_data):
         if not context_json:
             raise ValueError("Failed to convert context data to JSON")
         
-        # Log the actual JSON being stored for debugging
-        logger.debug(f"Storing context as JSON: {context_json}")
-        
         conn = None
         try:
             conn = get_connection()
             cursor = conn.cursor()
+            
+            # Check if user_context table exists
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM information_schema.tables 
+                WHERE table_schema = %s 
+                AND table_name = 'user_context'
+            """, (DB_CONFIG['database'],))
+            
+            table_exists = cursor.fetchone()[0] > 0
+            
+            # Create table if it doesn't exist
+            if not table_exists:
+                cursor.execute("""
+                    CREATE TABLE user_context (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        telegram_id BIGINT UNIQUE,
+                        context_data JSON,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    )
+                """)
             
             # Check if context exists
             cursor.execute(
@@ -1288,7 +1395,7 @@ def set_user_context(telegram_id, context_data):
                 cursor.execute(
                     """
                     UPDATE user_context 
-                    SET context_data = %s::jsonb, updated_at = CURRENT_TIMESTAMP
+                    SET context_data = %s, updated_at = NOW()
                     WHERE telegram_id = %s
                     """,
                     (context_json, telegram_id)
@@ -1297,7 +1404,7 @@ def set_user_context(telegram_id, context_data):
                 cursor.execute(
                     """
                     INSERT INTO user_context (telegram_id, context_data, created_at, updated_at)
-                    VALUES (%s, %s::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, NOW(), NOW())
                     """,
                     (telegram_id, context_json)
                 )
@@ -1310,12 +1417,13 @@ def set_user_context(telegram_id, context_data):
             logger.error(f"Database error in set_user_context: {db_error}", exc_info=True)
             return False
         finally:
-            if conn:
+            if conn and conn.is_connected():
                 conn.close()
                 
     except Exception as e:
         logger.error(f"Error setting user context: {e}", exc_info=True)
         return False
+
 
 def get_user_context(telegram_id):
     """Get context data for a user
@@ -1326,13 +1434,23 @@ def get_user_context(telegram_id):
     Returns:
         dict: Context data or empty dict if not found
     """
-    import json
-    
     conn = None
     try:
-        # Direct database connection for better error handling
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = 'user_context'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()['count'] > 0
+        
+        if not table_exists:
+            return {}
         
         cursor.execute(
             "SELECT context_data FROM user_context WHERE telegram_id = %s",
@@ -1340,34 +1458,18 @@ def get_user_context(telegram_id):
         )
         result = cursor.fetchone()
         
-        if result and result[0]:
-            # Parse JSON data based on its type
-            context_data = result[0]
+        if result and result['context_data']:
+            # MySQL returns JSON data already parsed
+            context_data = result['context_data']
             
-            # For string type (most likely scenario)
-            if isinstance(context_data, str):
+            if isinstance(context_data, dict):
+                return context_data
+            elif isinstance(context_data, str):
                 try:
                     return json.loads(context_data)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Error parsing JSON string from database: {e}")
-                    return {}
-            
-            # For dict type (if PostgreSQL returns it as a dict already)
-            elif isinstance(context_data, dict):
-                return context_data
-                
-            # For binary data
-            elif isinstance(context_data, (bytes, bytearray)):
-                try:
-                    context_str = context_data.decode('utf-8')
-                    return json.loads(context_str)
-                except Exception as e:
-                    logger.error(f"Error decoding bytes to string: {e}")
-                    return {}
-            
+                except json.JSONDecodeError:
+                    return {"value": context_data}
             else:
-                # For any other type, log a warning
-                logger.warning(f"Unexpected type in context_data: {type(result[0])}")
                 return {"value": str(context_data)}
         else:
             return {}
@@ -1376,8 +1478,9 @@ def get_user_context(telegram_id):
         logger.error(f"Error getting user context: {e}", exc_info=True)
         return {}
     finally:
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
+
 
 def clear_user_context(telegram_id):
     """Clear context data for a user
@@ -1392,6 +1495,19 @@ def clear_user_context(telegram_id):
     try:
         conn = get_connection()
         cursor = conn.cursor()
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = 'user_context'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()[0] > 0
+        
+        if not table_exists:
+            return True  # No table means nothing to clear
         
         cursor.execute(
             "DELETE FROM user_context WHERE telegram_id = %s",
@@ -1406,27 +1522,9 @@ def clear_user_context(telegram_id):
             conn.rollback()
         return False
     finally:
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
 
-
-def clear_user_context(telegram_id):
-    """Clear context data for a user
-    
-    Args:
-        telegram_id (int): Telegram user ID
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    query = "DELETE FROM user_context WHERE telegram_id = %s"
-    
-    try:
-        execute_query(query, (telegram_id,), commit=True)
-        return True
-    except Exception as e:
-        print(f"Error clearing user context: {e}")
-        return False
 
 # -------------------------
 # REVIEW FUNCTIONS
@@ -1445,32 +1543,50 @@ def add_review(order_id, customer_id, artisan_id, rating, comment=None):
     Returns:
         int: ID of the created review
     """
-    query = """
-        INSERT INTO reviews (order_id, customer_id, artisan_id, rating, comment, created_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        RETURNING id
-    """
-    
-    result = execute_query(
-        query, 
-        (order_id, customer_id, artisan_id, rating, comment),
-        fetchone=True,
-        commit=True
-    )
-    
-    # Update artisan's average rating
-    update_rating_query = """
-        UPDATE artisans 
-        SET rating = (
-            SELECT AVG(rating) 
-            FROM reviews 
-            WHERE artisan_id = %s
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Insert review
+        cursor.execute(
+            """
+            INSERT INTO reviews (order_id, customer_id, artisan_id, rating, comment, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            """,
+            (order_id, customer_id, artisan_id, rating, comment)
         )
-        WHERE id = %s
-    """
-    execute_query(update_rating_query, (artisan_id, artisan_id), commit=True)
-    
-    return result[0] if result else None
+        
+        review_id = cursor.lastrowid
+        
+        # Update artisan's average rating
+        cursor.execute(
+            """
+            UPDATE artisans 
+            SET rating = (
+                SELECT AVG(rating) 
+                FROM reviews 
+                WHERE artisan_id = %s
+            )
+            WHERE id = %s
+            """,
+            (artisan_id, artisan_id)
+        )
+        
+        conn.commit()
+        return review_id
+    except Exception as e:
+        logger.error(f"Error adding review: {e}")
+        if conn:
+            conn.rollback()
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_artisan_reviews(artisan_id):
     """Get reviews for a specific artisan
@@ -1492,6 +1608,7 @@ def get_artisan_reviews(artisan_id):
     
     return execute_query(query, (artisan_id,), fetchall=True, dict_cursor=True)
 
+
 def get_artisan_average_rating(artisan_id):
     """Get average rating for an artisan
     
@@ -1505,6 +1622,7 @@ def get_artisan_average_rating(artisan_id):
     result = execute_query(query, (artisan_id,), fetchone=True)
     
     return result[0] if result else None
+
 
 # -------------------------
 # STATISTICS FUNCTIONS
@@ -1547,7 +1665,7 @@ def get_artisan_statistics(artisan_id):
         # Get average rating
         rating_query = "SELECT rating FROM artisans WHERE id = %s"
         avg_rating_result = execute_query(rating_query, (artisan_id,), fetchone=True)
-        avg_rating = avg_rating_result[0] if avg_rating_result[0] is not None else 0
+        avg_rating = avg_rating_result[0] if avg_rating_result and avg_rating_result[0] is not None else 0
         
         # Get total earnings
         earnings_query = """
@@ -1565,7 +1683,7 @@ def get_artisan_statistics(artisan_id):
             JOIN orders o ON op.order_id = o.id
             WHERE o.artisan_id = %s 
             AND o.status = 'completed'
-            AND o.completed_at >= NOW() - INTERVAL '30 days'
+            AND o.completed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         """
         monthly_earnings = execute_query(monthly_earnings_query, (artisan_id,), fetchone=True)[0]
         
@@ -1574,7 +1692,7 @@ def get_artisan_statistics(artisan_id):
             SELECT COUNT(*) 
             FROM orders 
             WHERE artisan_id = %s
-            AND created_at >= NOW() - INTERVAL '7 days'
+            AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
         """
         last_week_orders = execute_query(last_week_query, (artisan_id,), fetchone=True)[0]
         
@@ -1583,7 +1701,7 @@ def get_artisan_statistics(artisan_id):
             SELECT COUNT(*) 
             FROM orders 
             WHERE artisan_id = %s
-            AND created_at >= NOW() - INTERVAL '30 days'
+            AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         """
         last_month_orders = execute_query(last_month_query, (artisan_id,), fetchone=True)[0]
         
@@ -1592,8 +1710,8 @@ def get_artisan_statistics(artisan_id):
             SELECT COUNT(*) 
             FROM orders 
             WHERE artisan_id = %s
-            AND created_at >= NOW() - INTERVAL '60 days'
-            AND created_at < NOW() - INTERVAL '30 days'
+            AND created_at >= DATE_SUB(NOW(), INTERVAL 60 DAY)
+            AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)
         """
         prev_month_orders = execute_query(prev_month_query, (artisan_id,), fetchone=True)[0]
         
@@ -1654,8 +1772,9 @@ def get_artisan_statistics(artisan_id):
         
         return stats
     except Exception as e:
-        print(f"Error getting artisan statistics: {e}")
+        logger.error(f"Error getting artisan statistics: {e}")
         return None
+
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two points in kilometers using the haversine formula
@@ -1690,8 +1809,10 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return distance
 
 
+# -------------------------
+# DEBUGGING FUNCTIONS
+# -------------------------
 
-# db.py içerisine debug fonksiyonlarını ekleyelim
 def debug_order_payment(order_id):
     """Debug function to check order payment details"""
     try:
@@ -1707,17 +1828,12 @@ def debug_order_payment(order_id):
             WHERE o.id = %s
         """
         
-        conn = get_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(query, (order_id,))
-        result = cursor.fetchone()
-        conn.close()
+        result = execute_query(query, (order_id,), fetchone=True, dict_cursor=True)
         
-        return dict(result) if result else None
+        return result
     except Exception as e:
         logger.error(f"Error in debug_order_payment: {e}")
         return None
-    
 
 
 def check_receipt_verification_status(order_id):
@@ -1739,9 +1855,9 @@ def check_receipt_verification_status(order_id):
         result = execute_query(query, (order_id,), fetchone=True)
         
         if result:
-            if result[0] is True:
+            if result[0] == 1:  # MySQL stores boolean as 0/1
                 return 'verified'
-            elif result[0] is False:
+            elif result[0] == 0:
                 return 'invalid'
             else:
                 return 'pending'
@@ -1750,7 +1866,6 @@ def check_receipt_verification_status(order_id):
         logger.error(f"Error checking receipt verification status: {e}", exc_info=True)
         return None
 
-# Make sure this function is correctly implemented in db.py
 
 def block_customer(customer_id, reason, required_payment, block_hours=24):
     """Block a customer
@@ -1764,59 +1879,42 @@ def block_customer(customer_id, reason, required_payment, block_hours=24):
     Returns:
         bool: True if successful, False otherwise
     """
-    # Create a new table for customer blocks if it doesn't exist
-    create_table_query = """
-        CREATE TABLE IF NOT EXISTS customer_blocks (
-            id SERIAL PRIMARY KEY,
-            customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-            is_blocked BOOLEAN DEFAULT TRUE,
-            block_reason TEXT,
-            required_payment NUMERIC(10,2) DEFAULT 0,
-            block_until TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            unblocked_at TIMESTAMP
-        )
-    """
-    
+    conn = None
     try:
-        # Create the table first (if it doesn't exist)
-        execute_query(create_table_query, commit=True)
-        
-        # Update customer to set as blocked
-        update_query = """
-            UPDATE customers
-            SET active = FALSE
-            WHERE id = %s
-        """
-        
-        # Calculate block until time
-        import datetime
-        block_until = datetime.datetime.now() + datetime.timedelta(hours=block_hours)
-        
-        # Insert block record
-        block_query = """
-            INSERT INTO customer_blocks 
-            (customer_id, is_blocked, block_reason, required_payment, block_until, created_at)
-            VALUES (%s, TRUE, %s, %s, %s, CURRENT_TIMESTAMP)
-            RETURNING id
-        """
-        
         conn = get_connection()
         cursor = conn.cursor()
         
-        cursor.execute(update_query, (customer_id,))
-        cursor.execute(block_query, (customer_id, reason, required_payment, block_until))
+        # Update customer to set as inactive
+        cursor.execute(
+            "UPDATE customers SET active = FALSE WHERE id = %s",
+            (customer_id,)
+        )
         
-        result = cursor.fetchone()
+        # Calculate block until time
+        block_until = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Insert block record
+        cursor.execute(
+            """
+            INSERT INTO customer_blocks 
+            (customer_id, is_blocked, block_reason, required_payment, block_until, created_at)
+            VALUES (%s, TRUE, %s, %s, DATE_ADD(NOW(), INTERVAL %s HOUR), NOW())
+            """,
+            (customer_id, reason, required_payment, block_hours)
+        )
+        
         conn.commit()
-        conn.close()
-        
         logger.info(f"Successfully blocked customer {customer_id} for reason: {reason}")
-        return bool(result)
+        return True
     except Exception as e:
         logger.error(f"Error blocking customer: {e}", exc_info=True)
+        if conn:
+            conn.rollback()
         return False
-    
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_customer_blocked_status(customer_id):
     """Check if a customer is blocked and get the reason
@@ -1830,12 +1928,16 @@ def get_customer_blocked_status(customer_id):
     try:
         # First check if the table exists
         check_table_query = """
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'customer_blocks'
-            )
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s AND table_name = 'customer_blocks'
         """
-        table_exists = execute_query(check_table_query, fetchone=True)[0]
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(check_table_query, (DB_CONFIG['database'],))
+        table_exists = cursor.fetchone()[0] > 0
         
         if not table_exists:
             # Table doesn't exist, customer can't be blocked
@@ -1849,15 +1951,20 @@ def get_customer_blocked_status(customer_id):
             LIMIT 1
         """
         
-        result = execute_query(query, (customer_id,), fetchone=True)
+        cursor.execute(query, (customer_id,))
+        result = cursor.fetchone()
         
         if result:
-            return True, result[1], result[2], result[3]
+            return bool(result[0]), result[1], float(result[2]), result[3]
         else:
             return False, None, 0, None
     except Exception as e:
         logger.error(f"Error checking customer blocked status: {e}")
         return False, None, 0, None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def update_receipt_verification_status(order_id, is_verified):
     """Update receipt verification status
@@ -1873,17 +1980,28 @@ def update_receipt_verification_status(order_id, is_verified):
         query = """
             UPDATE order_payments
             SET receipt_verified = %s,
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = NOW()
             WHERE order_id = %s
-            RETURNING id
         """
         
-        result = execute_query(query, (is_verified, order_id), fetchone=True, commit=True)
+        # Convert Python None to MySQL NULL
+        params = [is_verified if is_verified is not None else None, order_id]
         
-        return bool(result)
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(query, params)
+        conn.commit()
+        
+        # Check if any rows were affected
+        return cursor.rowcount > 0
     except Exception as e:
         logger.error(f"Error updating receipt verification status: {e}")
         return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def set_admin_payment_completed(order_id, is_completed):
     """Set admin payment completed status
@@ -1899,17 +2017,25 @@ def set_admin_payment_completed(order_id, is_completed):
         query = """
             UPDATE order_payments
             SET admin_payment_completed = %s,
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = NOW()
             WHERE order_id = %s
-            RETURNING id
         """
         
-        result = execute_query(query, (is_completed, order_id), fetchone=True, commit=True)
+        conn = get_connection()
+        cursor = conn.cursor()
         
-        return bool(result)
+        cursor.execute(query, (is_completed, order_id))
+        conn.commit()
+        
+        # Check if any rows were affected
+        return cursor.rowcount > 0
     except Exception as e:
         logger.error(f"Error setting admin payment completed: {e}")
         return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_admin_payment_completed(order_id):
     """Check if admin payment is completed
@@ -1933,7 +2059,7 @@ def get_admin_payment_completed(order_id):
     except Exception as e:
         logger.error(f"Error checking admin payment completion: {e}")
         return False
-    
+
 
 def save_customer_fine_receipt(customer_id, file_id):
     """Save customer fine payment receipt
@@ -1946,35 +2072,50 @@ def save_customer_fine_receipt(customer_id, file_id):
         bool: True if successful, False otherwise
     """
     try:
-        # Create customer_fine_receipts table if it doesn't exist
-        create_table_query = """
-            CREATE TABLE IF NOT EXISTS customer_fine_receipts (
-                id SERIAL PRIMARY KEY,
-                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-                file_id VARCHAR(255) NOT NULL,
-                status VARCHAR(20) DEFAULT 'pending',
-                verified_by INTEGER,
-                verified_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """
+        conn = get_connection()
+        cursor = conn.cursor()
         
-        execute_query(create_table_query, commit=True)
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = 'customer_fine_receipts'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()[0] > 0
+        
+        # Create table if it doesn't exist
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE customer_fine_receipts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    customer_id INT NOT NULL,
+                    file_id VARCHAR(255) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    verified_by INT,
+                    verified_at DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+                )
+            """)
         
         # Insert receipt record
-        query = """
+        cursor.execute("""
             INSERT INTO customer_fine_receipts 
             (customer_id, file_id, status, created_at)
-            VALUES (%s, %s, 'pending', CURRENT_TIMESTAMP)
-            RETURNING id
-        """
+            VALUES (%s, %s, 'pending', NOW())
+        """, (customer_id, file_id))
         
-        result = execute_query(query, (customer_id, file_id), fetchone=True, commit=True)
-        return bool(result)
+        conn.commit()
+        return True
     except Exception as e:
         logger.error(f"Error saving customer fine receipt: {e}")
         return False
-    
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def unblock_customer(customer_id):
     """Unblock a customer
@@ -1991,7 +2132,7 @@ def unblock_customer(customer_id):
     # Update block record
     block_query = """
         UPDATE customer_blocks
-        SET is_blocked = FALSE, unblocked_at = CURRENT_TIMESTAMP
+        SET is_blocked = FALSE, unblocked_at = NOW()
         WHERE customer_id = %s AND is_blocked = TRUE
     """
     
@@ -2011,9 +2152,8 @@ def unblock_customer(customer_id):
             conn.rollback()
         return False
     finally:
-        if conn:
-            conn.close()    
-
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def create_refund_request(order_id, amount, reason):
@@ -2028,46 +2168,52 @@ def create_refund_request(order_id, amount, reason):
         int: ID of the created refund request or None if failed
     """
     try:
-        # First check if refunds table exists
-        check_table_query = """
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'refund_requests'
-            )
-        """
-        table_exists = execute_query(check_table_query, fetchone=True)[0]
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = 'refund_requests'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()[0] > 0
         
         # Create table if it doesn't exist
         if not table_exists:
-            create_table_query = """
+            cursor.execute("""
                 CREATE TABLE refund_requests (
-                    id SERIAL PRIMARY KEY,
-                    order_id INTEGER NOT NULL REFERENCES orders(id),
-                    amount NUMERIC(10, 2) NOT NULL,
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    order_id INT NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL,
                     reason TEXT NOT NULL,
                     status VARCHAR(20) DEFAULT 'pending',
                     card_number VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_by INTEGER,
-                    completed_at TIMESTAMP
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    completed_by INT,
+                    completed_at DATETIME,
+                    FOREIGN KEY (order_id) REFERENCES orders(id)
                 )
-            """
-            execute_query(create_table_query, commit=True)
+            """)
         
         # Insert refund request
-        query = """
+        cursor.execute("""
             INSERT INTO refund_requests 
             (order_id, amount, reason, status, created_at)
-            VALUES (%s, %s, %s, 'pending', CURRENT_TIMESTAMP)
-            RETURNING id
-        """
+            VALUES (%s, %s, %s, 'pending', NOW())
+        """, (order_id, amount, reason))
         
-        result = execute_query(query, (order_id, amount, reason), fetchone=True, commit=True)
-        return result[0] if result else None
-    
+        conn.commit()
+        return cursor.lastrowid
     except Exception as e:
         logger.error(f"Error creating refund request: {e}", exc_info=True)
         return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
 
 def get_refund_request(refund_id):
     """Get refund request by ID
@@ -2086,11 +2232,11 @@ def get_refund_request(refund_id):
         """
         
         result = execute_query(query, (refund_id,), fetchone=True, dict_cursor=True)
-        return dict(result) if result else None
-    
+        return result
     except Exception as e:
         logger.error(f"Error getting refund request: {e}")
         return None
+
 
 def update_refund_request(refund_id, data):
     """Update refund request
@@ -2110,7 +2256,7 @@ def update_refund_request(refund_id, data):
         for field in valid_fields:
             if field in data and data[field] is not None:
                 if field == 'completed_at' and data[field] == 'CURRENT_TIMESTAMP':
-                    update_parts.append(f"{field} = CURRENT_TIMESTAMP")
+                    update_parts.append(f"{field} = NOW()")
                 else:
                     update_parts.append(f"{field} = %s")
                     params.append(data[field])
@@ -2128,24 +2274,33 @@ def update_refund_request(refund_id, data):
         
         execute_query(query, params, commit=True)
         return True
-    
     except Exception as e:
         logger.error(f"Error updating refund request: {e}")
         return False
-    
+
+
 def mark_admin_payment_completed(order_id):
+    """Mark admin payment as completed
+    
+    Args:
+        order_id (int): ID of the order
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("""
+        cursor = conn.cursor()
+        cursor.execute("""
             UPDATE order_payments 
             SET admin_payment_completed = TRUE
             WHERE order_id = %s
         """, (order_id,))
         conn.commit()
-        cur.close()
-        conn.close()
         return True
     except Exception as e:
-        print(f"DB error in mark_admin_payment_completed: {e}")
+        logger.error(f"DB error in mark_admin_payment_completed: {e}")
         return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()

@@ -1,73 +1,80 @@
 #!/usr/bin/env python
 """
 Database setup script for Artisan Booking Bot.
-This script creates or updates the database schema.
+This script creates or updates the database schema for MySQL.
 """
-
-import psycopg2
+import mysql.connector
+from mysql.connector import Error
 from config import DB_CONFIG
 
 def setup_database():
-    """Set up the database schema"""
+    """Set up the database schema for MySQL"""
     conn = None
     try:
         # Connect to the database
-        print("Connecting to PostgreSQL database...")
-        conn = psycopg2.connect(**DB_CONFIG)
+        print("Connecting to MySQL database...")
+        conn = mysql.connector.connect(
+            host=DB_CONFIG["host"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"],
+            database=DB_CONFIG["database"],
+            port=DB_CONFIG.get("port", 3306)
+        )
+        
+        # Enable autocommit
         conn.autocommit = True
-        cur = conn.cursor()
+        cursor = conn.cursor()
         
         # Create tables if they don't exist
         print("Creating tables if they don't exist...")
         
-        # Customers table - updated with phone and city validation
-        cur.execute('''
+        # Customers table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS customers (
-                id SERIAL PRIMARY KEY,
+                id INT AUTO_INCREMENT PRIMARY KEY,
                 telegram_id BIGINT UNIQUE,
                 name VARCHAR(100) NOT NULL,
                 phone VARCHAR(20),
                 city VARCHAR(50),
                 email VARCHAR(100),
                 address TEXT,
-                profile_complete BOOLEAN DEFAULT FALSE,
-                active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                profile_complete TINYINT(1) DEFAULT 0,
+                active TINYINT(1) DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
         # Services table (main service categories)
-        cur.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS services (
-                id SERIAL PRIMARY KEY,
+                id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(50) NOT NULL UNIQUE,
                 description TEXT,
                 icon VARCHAR(50),
-                active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                active TINYINT(1) DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
         # Subservices table (specific services under categories)
-        cur.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS subservices (
-                id SERIAL PRIMARY KEY,
-                service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                service_id INT NOT NULL,
                 name VARCHAR(100) NOT NULL,
                 description TEXT,
-                active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(service_id, name)
-            )
+                active TINYINT(1) DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_service_name (service_id, name),
+                FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        
-
-        # Artisans table - updated with blocking fields and additional info
-        cur.execute('''
+        # Artisans table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS artisans (
-                id SERIAL PRIMARY KEY,
+                id INT AUTO_INCREMENT PRIMARY KEY,
                 telegram_id BIGINT UNIQUE,
                 name VARCHAR(100) NOT NULL,
                 phone VARCHAR(20) NOT NULL,
@@ -75,259 +82,257 @@ def setup_database():
                 location VARCHAR(100),
                 city VARCHAR(50),
                 address TEXT,
-                latitude DOUBLE PRECISION,
-                longitude DOUBLE PRECISION,
-                rating NUMERIC(2,1) DEFAULT 0,
-                active BOOLEAN DEFAULT TRUE,
-                blocked BOOLEAN DEFAULT FALSE,
+                latitude DOUBLE,
+                longitude DOUBLE,
+                rating DECIMAL(2,1) DEFAULT 0,
+                active TINYINT(1) DEFAULT 1,
+                blocked TINYINT(1) DEFAULT 0,
                 block_reason TEXT,
-                block_time TIMESTAMP,
+                block_time DATETIME,
                 payment_card_number VARCHAR(30),
                 payment_card_holder VARCHAR(100),
-                profile_complete BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                profile_complete TINYINT(1) DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-
-
-        cur.execute('''
+        # Orders table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
-                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-                artisan_id INTEGER NOT NULL REFERENCES artisans(id) ON DELETE CASCADE,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                customer_id INT NOT NULL,
+                artisan_id INT NOT NULL,
                 service VARCHAR(50) NOT NULL,
                 subservice VARCHAR(100),
-                date_time TIMESTAMP NOT NULL,
+                date_time DATETIME NOT NULL,
                 note TEXT,
-                latitude DOUBLE PRECISION,
-                longitude DOUBLE PRECISION,
+                latitude DOUBLE,
+                longitude DOUBLE,
                 location_name VARCHAR(100),
-                price NUMERIC(10,2),
+                price DECIMAL(10,2),
                 status VARCHAR(20) DEFAULT 'pending',
                 payment_method VARCHAR(20),
                 payment_status VARCHAR(20) DEFAULT 'unpaid',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                completed_at TIMESTAMP
-            )
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
 
-        # Artisan blocks table - for keeping track of block history
-        cur.execute('''
+        # Artisan blocks table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS artisan_blocks (
-                id SERIAL PRIMARY KEY,
-                artisan_id INTEGER NOT NULL REFERENCES artisans(id) ON DELETE CASCADE,
-                is_blocked BOOLEAN DEFAULT TRUE,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                artisan_id INT NOT NULL,
+                is_blocked TINYINT(1) DEFAULT 1,
                 block_reason TEXT,
-                required_payment NUMERIC(10,2) DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                unblocked_at TIMESTAMP
-            )
+                required_payment DECIMAL(10,2) DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                unblocked_at DATETIME,
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
 
-
-        # Create scheduled_tasks table
-        cur.execute("""
+        # Scheduled tasks table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                id SERIAL PRIMARY KEY,
+                id INT AUTO_INCREMENT PRIMARY KEY,
                 task_type VARCHAR(50) NOT NULL,
-                reference_id INTEGER NOT NULL,
-                execution_time TIMESTAMP NOT NULL,
+                reference_id INT NOT NULL,
+                execution_time DATETIME NOT NULL,
                 status VARCHAR(20) DEFAULT 'pending',
-                additional_data JSONB,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP
-            )
-        """)
+                additional_data JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                started_at DATETIME,
+                completed_at DATETIME
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ''')
 
-        # Create receipt_verification_history table
-        cur.execute("""
+        # Receipt verification history table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS receipt_verification_history (
-                id SERIAL PRIMARY KEY,
-                order_id INTEGER NOT NULL REFERENCES orders(id),
-                is_verified BOOLEAN NOT NULL,
-                attempt_number INTEGER DEFAULT 1,
-                verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                order_id INT NOT NULL,
+                is_verified TINYINT(1) NOT NULL,
+                attempt_number INT DEFAULT 1,
+                verified_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES orders(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ''')
         
-        # Artisan services table - to track which subservices each artisan provides
-        cur.execute('''
+        # Artisan services table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS artisan_services (
-                id SERIAL PRIMARY KEY,
-                artisan_id INTEGER NOT NULL REFERENCES artisans(id) ON DELETE CASCADE,
-                subservice_id INTEGER NOT NULL REFERENCES subservices(id) ON DELETE CASCADE,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(artisan_id, subservice_id)
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                artisan_id INT NOT NULL,
+                subservice_id INT NOT NULL,
+                is_active TINYINT(1) DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_artisan_subservice (artisan_id, subservice_id),
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE,
+                FOREIGN KEY (subservice_id) REFERENCES subservices(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
         # Artisan price ranges table
-        cur.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS artisan_price_ranges (
-                id SERIAL PRIMARY KEY,
-                artisan_id INTEGER NOT NULL REFERENCES artisans(id) ON DELETE CASCADE,
-                subservice_id INTEGER NOT NULL REFERENCES subservices(id) ON DELETE CASCADE,
-                min_price NUMERIC(10,2) NOT NULL,
-                max_price NUMERIC(10,2) NOT NULL,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(artisan_id, subservice_id)
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                artisan_id INT NOT NULL,
+                subservice_id INT NOT NULL,
+                min_price DECIMAL(10,2) NOT NULL,
+                max_price DECIMAL(10,2) NOT NULL,
+                is_active TINYINT(1) DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_artisan_subservice_price (artisan_id, subservice_id),
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE,
+                FOREIGN KEY (subservice_id) REFERENCES subservices(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        
-
-        cur.execute('''
+        # Notification log table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS notification_log (
-                id SERIAL PRIMARY KEY,
+                id INT AUTO_INCREMENT PRIMARY KEY,
                 notification_type VARCHAR(50) NOT NULL,
-                target_id INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                target_id INT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
 
-        cur.execute('''
+        # Customer blocks table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS customer_blocks (
-                id SERIAL PRIMARY KEY,
-                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-                is_blocked BOOLEAN DEFAULT TRUE,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                customer_id INT NOT NULL,
+                is_blocked TINYINT(1) DEFAULT 1,
                 block_reason TEXT,
-                required_payment NUMERIC(10,2) DEFAULT 0,
-                block_until TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                unblocked_at TIMESTAMP
-            )
+                required_payment DECIMAL(10,2) DEFAULT 0,
+                block_until DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                unblocked_at DATETIME,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        # Order subservices table (links orders to specific subservices)
-        cur.execute('''
+        # Order subservices table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS order_subservices (
-                id SERIAL PRIMARY KEY,
-                order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-                subservice_id INTEGER NOT NULL REFERENCES subservices(id) ON DELETE CASCADE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(order_id, subservice_id)
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                order_id INT NOT NULL,
+                subservice_id INT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_order_subservice (order_id, subservice_id),
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (subservice_id) REFERENCES subservices(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        # Order payments table - enhanced with more details
-        cur.execute('''
+        # Order payments table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS order_payments (
-                id SERIAL PRIMARY KEY,
-                order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-                amount NUMERIC(10,2) NOT NULL,
-                admin_fee NUMERIC(10,2) NOT NULL,
-                artisan_amount NUMERIC(10,2) NOT NULL,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                order_id INT NOT NULL UNIQUE,
+                amount DECIMAL(10,2) NOT NULL,
+                admin_fee DECIMAL(10,2) NOT NULL,
+                artisan_amount DECIMAL(10,2) NOT NULL,
                 payment_status VARCHAR(20) DEFAULT 'pending',
                 payment_method VARCHAR(50),
-                payment_date TIMESTAMP,
+                payment_date DATETIME,
                 receipt_file_id VARCHAR(255),
-                receipt_uploaded_at TIMESTAMP,
-                receipt_verified BOOLEAN DEFAULT FALSE,
-                admin_payment_deadline TIMESTAMP,
-                admin_payment_completed BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                receipt_uploaded_at DATETIME,
+                receipt_verified TINYINT(1) DEFAULT 0,
+                admin_payment_deadline DATETIME,
+                admin_payment_completed TINYINT(1) DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        # Fine receipts table - for storing admin payment receipts
-        cur.execute('''
+        # Fine receipts table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS fine_receipts (
-                id SERIAL PRIMARY KEY,
-                artisan_id INTEGER NOT NULL REFERENCES artisans(id) ON DELETE CASCADE,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                artisan_id INT NOT NULL,
                 file_id VARCHAR(255) NOT NULL,
                 status VARCHAR(20) DEFAULT 'pending',
-                verified_by INTEGER,
-                verified_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                verified_by INT,
+                verified_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
         # Reviews table
-        cur.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS reviews (
-                id SERIAL PRIMARY KEY,
-                order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-                artisan_id INTEGER NOT NULL REFERENCES artisans(id) ON DELETE CASCADE,
-                rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                order_id INT NOT NULL,
+                customer_id INT NOT NULL,
+                artisan_id INT NOT NULL,
+                rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
                 comment TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
-        # User context table - for temporary user data storage
-        cur.execute('''
+        # User context table
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_context (
-                id SERIAL PRIMARY KEY,
+                id INT AUTO_INCREMENT PRIMARY KEY,
                 telegram_id BIGINT UNIQUE,
-                context_data JSONB,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                context_data JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
-
         
-        
-        # Add indexes for performance
+        # Create indexes for better performance
         print("Creating indexes...")
+        
         # Customer indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_customers_telegram ON customers (telegram_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers (phone)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (city)')
+        cursor.execute('CREATE INDEX idx_customers_telegram ON customers (telegram_id)')
+        cursor.execute('CREATE INDEX idx_customers_phone ON customers (phone)')
+        cursor.execute('CREATE INDEX idx_customers_city ON customers (city)')
         
         # Artisan indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisans_telegram ON artisans (telegram_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisans_phone ON artisans (phone)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisans_city ON artisans (city)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisans_service ON artisans (service)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisans_location ON artisans (latitude, longitude)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisans_blocked ON artisans (blocked)')
+        cursor.execute('CREATE INDEX idx_artisans_telegram ON artisans (telegram_id)')
+        cursor.execute('CREATE INDEX idx_artisans_phone ON artisans (phone)')
+        cursor.execute('CREATE INDEX idx_artisans_city ON artisans (city)')
+        cursor.execute('CREATE INDEX idx_artisans_service ON artisans (service)')
+        cursor.execute('CREATE INDEX idx_artisans_location ON artisans (latitude, longitude)')
+        cursor.execute('CREATE INDEX idx_artisans_blocked ON artisans (blocked)')
         
         # Services indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_services_active ON services (active)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_subservices_service ON subservices (service_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_subservices_active ON subservices (active)')
-        
-        # Artisan services indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisan_services_artisan ON artisan_services (artisan_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisan_services_subservice ON artisan_services (subservice_id)')
-        
-        # Price ranges indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisan_price_ranges_artisan ON artisan_price_ranges (artisan_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_artisan_price_ranges_subservice ON artisan_price_ranges (subservice_id)')
+        cursor.execute('CREATE INDEX idx_services_active ON services (active)')
+        cursor.execute('CREATE INDEX idx_subservices_service ON subservices (service_id)')
+        cursor.execute('CREATE INDEX idx_subservices_active ON subservices (active)')
         
         # Order indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders (customer_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_orders_artisan ON orders (artisan_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_orders_datetime ON orders (date_time)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders (payment_status)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_orders_payment_method ON orders (payment_method)')
+        cursor.execute('CREATE INDEX idx_orders_customer ON orders (customer_id)')
+        cursor.execute('CREATE INDEX idx_orders_artisan ON orders (artisan_id)')
+        cursor.execute('CREATE INDEX idx_orders_status ON orders (status)')
+        cursor.execute('CREATE INDEX idx_orders_datetime ON orders (date_time)')
+        cursor.execute('CREATE INDEX idx_orders_payment_status ON orders (payment_status)')
+        cursor.execute('CREATE INDEX idx_orders_payment_method ON orders (payment_method)')
         
         # Payment indexes
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_order_payments_status ON order_payments (payment_status)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_order_payments_method ON order_payments (payment_method)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_fine_receipts_artisan ON fine_receipts (artisan_id)')
-        cur.execute('CREATE INDEX IF NOT EXISTS idx_fine_receipts_status ON fine_receipts (status)')
+        cursor.execute('CREATE INDEX idx_order_payments_status ON order_payments (payment_status)')
+        cursor.execute('CREATE INDEX idx_order_payments_method ON order_payments (payment_method)')
+        cursor.execute('CREATE INDEX idx_fine_receipts_artisan ON fine_receipts (artisan_id)')
+        cursor.execute('CREATE INDEX idx_fine_receipts_status ON fine_receipts (status)')
         
-        # Update existing orders with default status if needed
-        cur.execute("UPDATE orders SET status = 'pending' WHERE status IS NULL")
-        cur.execute("UPDATE orders SET payment_status = 'unpaid' WHERE payment_status IS NULL")
-        
-        # Add city column to artisans table if it doesn't exist
-        try:
-            cur.execute("ALTER TABLE artisans ADD COLUMN IF NOT EXISTS city VARCHAR(50)")
-        except psycopg2.Error:
-            conn.rollback()
-            print("Column 'city' might already exist in artisans table.")
+        # Update existing orders status if needed
+        cursor.execute("UPDATE orders SET status = 'pending' WHERE status IS NULL")
+        cursor.execute("UPDATE orders SET payment_status = 'unpaid' WHERE payment_status IS NULL")
         
         # Insert sample services if they don't exist
         print("Adding sample services if they don't exist...")
@@ -343,163 +348,173 @@ def setup_database():
         ]
         
         for service_name, service_desc in service_data:
-            cur.execute(
-                "INSERT INTO services (name, description) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
-                (service_name, service_desc)
-            )
+            try:
+                cursor.execute(
+                    "INSERT IGNORE INTO services (name, description) VALUES (%s, %s)",
+                    (service_name, service_desc)
+                )
+            except Error as e:
+                print(f"Error inserting service {service_name}: {e}")
         
         # Get service IDs
-        cur.execute("SELECT id, name FROM services")
-        service_ids = {name: id for id, name in cur.fetchall()}
+        cursor.execute("SELECT id, name FROM services")
+        service_ids = {name: id for id, name in cursor.fetchall()}
         
         # Insert sample subservices
         print("Adding sample subservices if they don't exist...")
         
         # Santexnik subservices
-        santexnik_subservices = [
-            ('Su borusu təmiri', 'Su borularının təmiri və dəyişdirilməsi'),
-            ('Kanalizasiya təmizlənməsi', 'Kanalizasiya boruları və sistemlərinin təmizlənməsi'),
-            ('Krant quraşdırma', 'Krant və şlanqların quraşdırılması və təmiri'),
-            ('Unitaz təmiri', 'Unitazların quraşdırılması və təmiri'),
-            ('Hamam aksessuarlarının montajı', 'Hamam dəsti və aksessuarlarının quraşdırılması')
-        ]
-        
-        for name, desc in santexnik_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Santexnik'), name, desc)
-            )
+        if 'Santexnik' in service_ids:
+            santexnik_subservices = [
+                ('Su borusu təmiri', 'Su borularının təmiri və dəyişdirilməsi'),
+                ('Kanalizasiya təmizlənməsi', 'Kanalizasiya boruları və sistemlərinin təmizlənməsi'),
+                ('Krant quraşdırma', 'Krant və şlanqların quraşdırılması və təmiri'),
+                ('Unitaz təmiri', 'Unitazların quraşdırılması və təmiri'),
+                ('Hamam aksessuarlarının montajı', 'Hamam dəsti və aksessuarlarının quraşdırılması')
+            ]
+            
+            for name, desc in santexnik_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Santexnik'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Elektrik subservices
-        elektrik_subservices = [
-            ('Elektrik xəttinin çəkilişi', 'Elektrik xətlərinin çəkilişi və yenilənməsi'),
-            ('Ruzetka və açar təmiri', 'Ruzetka və açarların quraşdırılması və təmiri'),
-            ('İşıqlandırma quraşdırılması', 'Lampalar və işıqlandırma sistemlərinin quraşdırılması'),
-            ('Elektrik avadanlıqlarının montajı', 'Elektrik avadanlıqlarının montajı və təmiri')
-        ]
-        
-        for name, desc in elektrik_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Elektrik'), name, desc)
-            )
+        if 'Elektrik' in service_ids:
+            elektrik_subservices = [
+                ('Elektrik xəttinin çəkilişi', 'Elektrik xətlərinin çəkilişi və yenilənməsi'),
+                ('Ruzetka və açar təmiri', 'Ruzetka və açarların quraşdırılması və təmiri'),
+                ('İşıqlandırma quraşdırılması', 'Lampalar və işıqlandırma sistemlərinin quraşdırılması'),
+                ('Elektrik avadanlıqlarının montajı', 'Elektrik avadanlıqlarının montajı və təmiri')
+            ]
+            
+            for name, desc in elektrik_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Elektrik'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Kombi ustası subservices
-        kombi_subservices = [
-            ('Kombi quraşdırılması', 'Kombilərin quraşdırılması və işə salınması'),
-            ('Kombi təmiri', 'Kombilərin təmiri və ehtiyat hissələrinin dəyişdirilməsi'),
-            ('Kombi təmizlənməsi və servis', 'Kombilərin təmizlənməsi və dövri servis xidməti'),
-            ('Qaz xəttinə qoşulma', 'Qaz xəttinə qoşulma və təhlükəsizlik tədbirləri')
-        ]
-        
-        for name, desc in kombi_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Kombi ustası'), name, desc)
-            )
+        if 'Kombi ustası' in service_ids:
+            kombi_subservices = [
+                ('Kombi quraşdırılması', 'Kombilərin quraşdırılması və işə salınması'),
+                ('Kombi təmiri', 'Kombilərin təmiri və ehtiyat hissələrinin dəyişdirilməsi'),
+                ('Kombi təmizlənməsi və servis', 'Kombilərin təmizlənməsi və dövri servis xidməti'),
+                ('Qaz xəttinə qoşulma', 'Qaz xəttinə qoşulma və təhlükəsizlik tədbirləri')
+            ]
+            
+            for name, desc in kombi_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Kombi ustası'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Kondisioner ustası subservices
-        kondisioner_subservices = [
-            ('Kondisioner quraşdırılması', 'Kondisionerlərin quraşdırılması və işə salınması'),
-            ('Kondisioner təmiri', 'Kondisionerlərin təmiri və nasazlıqların aradan qaldırılması'),
-            ('Kondisioner yuyulması (servis)', 'Kondisionerlərin təmizlənməsi və dövri servis xidməti')
-        ]
-        
-        for name, desc in kondisioner_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Kondisioner ustası'), name, desc)
-            )
+        if 'Kondisioner ustası' in service_ids:
+            kondisioner_subservices = [
+                ('Kondisioner quraşdırılması', 'Kondisionerlərin quraşdırılması və işə salınması'),
+                ('Kondisioner təmiri', 'Kondisionerlərin təmiri və nasazlıqların aradan qaldırılması'),
+                ('Kondisioner yuyulması (servis)', 'Kondisionerlərin təmizlənməsi və dövri servis xidməti')
+            ]
+            
+            for name, desc in kondisioner_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Kondisioner ustası'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Mebel ustası subservices
-        mebel_subservices = [
-            ('Mebel təmiri', 'Mövcud mebellərin təmiri və bərpası'),
-            ('Yeni mebel yığılması', 'Yeni mebellərin yığılması və quraşdırılması'),
-            ('Sökülüb-yığılması (daşınma üçün)', 'Köçmə zamanı mebellərin sökülüb yenidən yığılması'),
-            ('Mətbəx mebeli quraşdırılması', 'Mətbəx mebelinin ölçülərə uyğun quraşdırılması')
-        ]
-        
-        for name, desc in mebel_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Mebel ustası'), name, desc)
-            )
+        if 'Mebel ustası' in service_ids:
+            mebel_subservices = [
+                ('Mebel təmiri', 'Mövcud mebellərin təmiri və bərpası'),
+                ('Yeni mebel yığılması', 'Yeni mebellərin yığılması və quraşdırılması'),
+                ('Sökülüb-yığılması (daşınma üçün)', 'Köçmə zamanı mebellərin sökülüb yenidən yığılması'),
+                ('Mətbəx mebeli quraşdırılması', 'Mətbəx mebelinin ölçülərə uyğun quraşdırılması')
+            ]
+            
+            for name, desc in mebel_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Mebel ustası'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Qapı-pəncərə ustası subservices
-        qapi_pencere_subservices = [
-            ('PVC pəncərə quraşdırılması', 'PVC pəncərələrin quraşdırılması və nizamlanması'),
-            ('Taxta qapı təmiri', 'Taxta qapıların təmiri və bərpası'),
-            ('Alüminium sistemlər', 'Alüminium qapı və pəncərələrin quraşdırılması'),
-            ('Kilid və mexanizmlərin təmiri', 'Qapı kilidləri və mexanizmlərinin təmiri və dəyişdirilməsi')
-        ]
-        
-        for name, desc in qapi_pencere_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Qapı-pəncərə ustası'), name, desc)
-            )
+        if 'Qapı-pəncərə ustası' in service_ids:
+            qapi_pencere_subservices = [
+                ('PVC pəncərə quraşdırılması', 'PVC pəncərələrin quraşdırılması və nizamlanması'),
+                ('Taxta qapı təmiri', 'Taxta qapıların təmiri və bərpası'),
+                ('Alüminium sistemlər', 'Alüminium qapı və pəncərələrin quraşdırılması'),
+                ('Kilid və mexanizmlərin təmiri', 'Qapı kilidləri və mexanizmlərinin təmiri və dəyişdirilməsi')
+            ]
+            
+            for name, desc in qapi_pencere_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Qapı-pəncərə ustası'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Bərpa ustası subservices
-        berpa_subservices = [
-            ('Ev təmiri', 'Evlərin ümumi təmiri və yenilənməsi'),
-            ('Divar kağızı (oboy) vurulması', 'Divar kağızlarının vurulması və hazırlıq işləri'),
-            ('Rəngsaz işləri', 'Divar, tavan və fasadların rənglənməsi'),
-            ('Alçıpan montajı', 'Alçıpan konstruksiyalarının quraşdırılması'),
-            ('Döşəmə və laminat quraşdırılması', 'Döşəmə və laminatların quraşdırılması')
-        ]
-        
-        for name, desc in berpa_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Bərpa ustası'), name, desc)
-            )
+        if 'Bərpa ustası' in service_ids:
+            berpa_subservices = [
+                ('Ev təmiri', 'Evlərin ümumi təmiri və yenilənməsi'),
+                ('Divar kağızı (oboy) vurulması', 'Divar kağızlarının vurulması və hazırlıq işləri'),
+                ('Rəngsaz işləri', 'Divar, tavan və fasadların rənglənməsi'),
+                ('Alçıpan montajı', 'Alçıpan konstruksiyalarının quraşdırılması'),
+                ('Döşəmə və laminat quraşdırılması', 'Döşəmə və laminatların quraşdırılması')
+            ]
+            
+            for name, desc in berpa_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Bərpa ustası'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         # Bağban subservices
-        bagban_subservices = [
-            ('Bağ sahəsinin təmizlənməsi', 'Bağ və həyət sahələrinin təmizlənməsi və hazırlanması'),
-            ('Ağac budama', 'Ağacların budanması və baxımı'),
-            ('Bağ suvarma sistemi qurulması', 'Avtomatik və ya manual suvarma sistemlərinin quraşdırılması'),
-            ('Çəmən toxumu əkilməsi', 'Çəmən toxumunun səpilməsi və baxımı')
-        ]
-        
-        for name, desc in bagban_subservices:
-            cur.execute(
-                "INSERT INTO subservices (service_id, name, description) VALUES (%s, %s, %s) ON CONFLICT (service_id, name) DO NOTHING",
-                (service_ids.get('Bağban'), name, desc)
-            )
-        
-        
-        # Set up triggers for automatic timestamps
-        cur.execute('''
-            CREATE OR REPLACE FUNCTION update_timestamp()
-            RETURNS TRIGGER AS $$
-            BEGIN
-               NEW.updated_at = NOW(); 
-               RETURN NEW;
-            END;
-            $$ language 'plpgsql';
-        ''')
-        
-        # Create triggers for all tables with updated_at
-        for table in ['customers', 'artisans', 'orders', 'order_payments', 'artisan_price_ranges', 'user_context']:
-            try:
-                cur.execute(f'''
-                    DROP TRIGGER IF EXISTS update_{table}_timestamp ON {table};
-                    CREATE TRIGGER update_{table}_timestamp
-                    BEFORE UPDATE ON {table}
-                    FOR EACH ROW
-                    EXECUTE PROCEDURE update_timestamp();
-                ''')
-            except psycopg2.Error as e:
-                conn.rollback()
-                print(f"Error creating trigger for {table}: {e}")
+        if 'Bağban' in service_ids:
+            bagban_subservices = [
+                ('Bağ sahəsinin təmizlənməsi', 'Bağ və həyət sahələrinin təmizlənməsi və hazırlanması'),
+                ('Ağac budama', 'Ağacların budanması və baxımı'),
+                ('Bağ suvarma sistemi qurulması', 'Avtomatik və ya manual suvarma sistemlərinin quraşdırılması'),
+                ('Çəmən toxumu əkilməsi', 'Çəmən toxumunun səpilməsi və baxımı')
+            ]
+            
+            for name, desc in bagban_subservices:
+                try:
+                    cursor.execute(
+                        "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
+                        (service_ids['Bağban'], name, desc)
+                    )
+                except Error as e:
+                    print(f"Error inserting subservice {name}: {e}")
         
         print("Database setup completed successfully!")
         
-    except (Exception, psycopg2.DatabaseError) as error:
+    except Error as error:
         print(f"Error: {error}")
     finally:
-        if conn is not None:
+        if conn is not None and conn.is_connected():
+            cursor.close()
             conn.close()
             print("Database connection closed.")
 

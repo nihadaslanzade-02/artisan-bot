@@ -1,0 +1,11 @@
+# Telegram framework
+aiogram==2.25.2          # bot framework used in dispatcher.py, bot.py, handlers/*
+
+# HTTP / async networking (Google Maps reverse-geocode, webhook runner, etc.)
+aiohttp==3.9.5           # aiohttp.ClientSession and aiohttp.web in geo_helpers.py & bot.py
+
+# Environment‐variable management
+python-dotenv==1.0.1     # load_dotenv in config.py
+
+# MySQL connector
+mysql-connector-python==8.3.0   # mysql.connector throughout db.py & db_setup.py
