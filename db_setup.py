@@ -4,8 +4,15 @@ Database setup script for Artisan Booking Bot.
 This script creates or updates the database schema for MySQL.
 """
 import mysql.connector
+import logging
 from mysql.connector import Error
 from config import DB_CONFIG
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 def setup_database():
     """Set up the database schema for MySQL"""
@@ -32,11 +39,11 @@ def setup_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS customers (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                telegram_id BIGINT UNIQUE,
-                name VARCHAR(100) NOT NULL,
-                phone VARCHAR(20),
-                city VARCHAR(50),
-                email VARCHAR(100),
+                telegram_id VARCHAR(255) UNIQUE,
+                name VARCHAR(500) NOT NULL UNIQUE,
+                phone TEXT,
+                city TEXT,
+                email TEXT,
                 address TEXT,
                 profile_complete TINYINT(1) DEFAULT 0,
                 active TINYINT(1) DEFAULT 1,
@@ -49,9 +56,9 @@ def setup_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS services (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(50) NOT NULL UNIQUE,
+                name VARCHAR(500) NOT NULL UNIQUE,
                 description TEXT,
-                icon VARCHAR(50),
+                icon TEXT,
                 active TINYINT(1) DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -62,7 +69,7 @@ def setup_database():
             CREATE TABLE IF NOT EXISTS subservices (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 service_id INT NOT NULL,
-                name VARCHAR(100) NOT NULL,
+                name VARCHAR(500) NOT NULL,
                 description TEXT,
                 active TINYINT(1) DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -75,12 +82,13 @@ def setup_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS artisans (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                telegram_id BIGINT UNIQUE,
-                name VARCHAR(100) NOT NULL,
-                phone VARCHAR(20) NOT NULL,
-                service VARCHAR(50) NOT NULL,
-                location VARCHAR(100),
-                city VARCHAR(50),
+                telegram_id VARCHAR(255) UNIQUE,
+                telegram_id_hash VARCHAR(255) UNIQUE,
+                name VARCHAR(500) NOT NULL,
+                phone TEXT NOT NULL,
+                service TEXT NOT NULL,
+                location TEXT,
+                city TEXT,
                 address TEXT,
                 latitude DOUBLE,
                 longitude DOUBLE,
@@ -89,8 +97,8 @@ def setup_database():
                 blocked TINYINT(1) DEFAULT 0,
                 block_reason TEXT,
                 block_time DATETIME,
-                payment_card_number VARCHAR(30),
-                payment_card_holder VARCHAR(100),
+                payment_card_number TEXT,
+                payment_card_holder TEXT,
                 profile_complete TINYINT(1) DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -102,18 +110,18 @@ def setup_database():
             CREATE TABLE IF NOT EXISTS orders (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 customer_id INT NOT NULL,
-                artisan_id INT NOT NULL,
-                service VARCHAR(50) NOT NULL,
-                subservice VARCHAR(100),
+                artisan_id INT,
+                service TEXT NOT NULL,
+                subservice TEXT,
                 date_time DATETIME NOT NULL,
                 note TEXT,
                 latitude DOUBLE,
                 longitude DOUBLE,
-                location_name VARCHAR(100),
+                location_name TEXT,
                 price DECIMAL(10,2),
-                status VARCHAR(20) DEFAULT 'pending',
-                payment_method VARCHAR(20),
-                payment_status VARCHAR(20) DEFAULT 'unpaid',
+                status VARCHAR(500) DEFAULT 'pending',
+                payment_method TEXT,
+                payment_status VARCHAR(500) DEFAULT 'unpaid',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 completed_at DATETIME,
@@ -140,10 +148,10 @@ def setup_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_tasks (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                task_type VARCHAR(50) NOT NULL,
+                task_type TEXT NOT NULL,
                 reference_id INT NOT NULL,
                 execution_time DATETIME NOT NULL,
-                status VARCHAR(20) DEFAULT 'pending',
+                status VARCHAR(500) DEFAULT 'pending',
                 additional_data JSON,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 started_at DATETIME,
@@ -198,7 +206,7 @@ def setup_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS notification_log (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                notification_type VARCHAR(50) NOT NULL,
+                notification_type TEXT NOT NULL,
                 target_id INT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -240,10 +248,10 @@ def setup_database():
                 amount DECIMAL(10,2) NOT NULL,
                 admin_fee DECIMAL(10,2) NOT NULL,
                 artisan_amount DECIMAL(10,2) NOT NULL,
-                payment_status VARCHAR(20) DEFAULT 'pending',
-                payment_method VARCHAR(50),
+                payment_status TEXT,
+                payment_method TEXT,
                 payment_date DATETIME,
-                receipt_file_id VARCHAR(255),
+                receipt_file_id TEXT,
                 receipt_uploaded_at DATETIME,
                 receipt_verified TINYINT(1) DEFAULT 0,
                 admin_payment_deadline DATETIME,
@@ -259,8 +267,8 @@ def setup_database():
             CREATE TABLE IF NOT EXISTS fine_receipts (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 artisan_id INT NOT NULL,
-                file_id VARCHAR(255) NOT NULL,
-                status VARCHAR(20) DEFAULT 'pending',
+                file_id TEXT NOT NULL,
+                status VARCHAR(500) DEFAULT 'pending',
                 verified_by INT,
                 verified_at DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -288,7 +296,7 @@ def setup_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_context (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                telegram_id BIGINT UNIQUE,
+                telegram_id VARCHAR(255) UNIQUE,
                 context_data JSON,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -299,36 +307,43 @@ def setup_database():
         print("Creating indexes...")
         
         # Customer indexes
-        cursor.execute('CREATE INDEX idx_customers_telegram ON customers (telegram_id)')
-        cursor.execute('CREATE INDEX idx_customers_phone ON customers (phone)')
-        cursor.execute('CREATE INDEX idx_customers_city ON customers (city)')
+        try:
+            # Customer indexes
+            cursor.execute('CREATE INDEX idx_customers_telegram ON customers (telegram_id)')
+            cursor.execute('CREATE INDEX idx_customers_phone ON customers (phone(20))')  # burada uzunluq təyin edilib
+            cursor.execute('CREATE INDEX idx_customers_city ON customers (city(20))')    # burada uzunluq təyin edilib
+        except Error as e:
+            logger.error(f"Error creating customer indexes: {e}")
         
-        # Artisan indexes
-        cursor.execute('CREATE INDEX idx_artisans_telegram ON artisans (telegram_id)')
-        cursor.execute('CREATE INDEX idx_artisans_phone ON artisans (phone)')
-        cursor.execute('CREATE INDEX idx_artisans_city ON artisans (city)')
-        cursor.execute('CREATE INDEX idx_artisans_service ON artisans (service)')
-        cursor.execute('CREATE INDEX idx_artisans_location ON artisans (latitude, longitude)')
-        cursor.execute('CREATE INDEX idx_artisans_blocked ON artisans (blocked)')
+        try:
+            # Artisan indexes
+            cursor.execute('CREATE INDEX idx_artisans_telegram ON artisans (telegram_id)')
+            cursor.execute('CREATE INDEX idx_artisans_phone ON artisans (phone(20))')     # burada uzunluq təyin edilib
+            cursor.execute('CREATE INDEX idx_artisans_city ON artisans (city(20))')       # burada uzunluq təyin edilib
+            cursor.execute('CREATE INDEX idx_artisans_service ON artisans (service(20))') # burada uzunluq təyin edilib
+            cursor.execute('CREATE INDEX idx_artisans_location ON artisans (latitude, longitude)')
+            cursor.execute('CREATE INDEX idx_artisans_blocked ON artisans (blocked)')
+        except Error as e:
+            logger.error(f"Error creating artisan indexes: {e}")
         
-        # Services indexes
+        # Services indexes - TEXT sütunlar üçün açar uzunluğu əlavə et
         cursor.execute('CREATE INDEX idx_services_active ON services (active)')
         cursor.execute('CREATE INDEX idx_subservices_service ON subservices (service_id)')
         cursor.execute('CREATE INDEX idx_subservices_active ON subservices (active)')
         
-        # Order indexes
+        # Order indexes - TEXT sütunlar üçün açar uzunluğu əlavə et
         cursor.execute('CREATE INDEX idx_orders_customer ON orders (customer_id)')
         cursor.execute('CREATE INDEX idx_orders_artisan ON orders (artisan_id)')
-        cursor.execute('CREATE INDEX idx_orders_status ON orders (status)')
+        cursor.execute('CREATE INDEX idx_orders_status ON orders (status(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
         cursor.execute('CREATE INDEX idx_orders_datetime ON orders (date_time)')
-        cursor.execute('CREATE INDEX idx_orders_payment_status ON orders (payment_status)')
-        cursor.execute('CREATE INDEX idx_orders_payment_method ON orders (payment_method)')
+        cursor.execute('CREATE INDEX idx_orders_payment_status ON orders (payment_status(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
+        cursor.execute('CREATE INDEX idx_orders_payment_method ON orders (payment_method(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
         
-        # Payment indexes
-        cursor.execute('CREATE INDEX idx_order_payments_status ON order_payments (payment_status)')
-        cursor.execute('CREATE INDEX idx_order_payments_method ON order_payments (payment_method)')
+        # Payment indexes - TEXT sütunlar üçün açar uzunluğu əlavə et
+        cursor.execute('CREATE INDEX idx_order_payments_status ON order_payments (payment_status(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
+        cursor.execute('CREATE INDEX idx_order_payments_method ON order_payments (payment_method(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
         cursor.execute('CREATE INDEX idx_fine_receipts_artisan ON fine_receipts (artisan_id)')
-        cursor.execute('CREATE INDEX idx_fine_receipts_status ON fine_receipts (status)')
+        cursor.execute('CREATE INDEX idx_fine_receipts_status ON fine_receipts (status(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
         
         # Update existing orders status if needed
         cursor.execute("UPDATE orders SET status = 'pending' WHERE status IS NULL")
@@ -517,6 +532,23 @@ def setup_database():
             cursor.close()
             conn.close()
             print("Database connection closed.")
+
+    # Ensure telegram_id_hash column exists in customers
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE table_name = 'customers' AND column_name = 'telegram_id_hash'
+        """)
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("ALTER TABLE customers ADD COLUMN telegram_id_hash VARCHAR(255)")
+            conn.commit()
+    except Exception as e:
+        print(f"Error ensuring telegram_id_hash column: {e}")
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 if __name__ == "__main__":
     setup_database()

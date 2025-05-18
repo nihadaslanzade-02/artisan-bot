@@ -16,6 +16,8 @@ import re
 import asyncio
 from config import *
 import random
+from order_status_service import check_order_acceptance
+from db_encryption_wrapper import wrap_get_dict_function
 
 # Set up logging
 logging.basicConfig(
@@ -37,10 +39,9 @@ class OrderStates(StatesGroup):
     selecting_service = State()
     selecting_subservice = State()
     sharing_location = State()
-    selecting_date = State()
-    selecting_time = State()
     entering_note = State()
     confirming_order = State()
+    # Tarih ve saat seçme state'leri kaldırıldı
 
 # Define states for viewing nearby artisans
 class NearbyArtisanStates(StatesGroup):
@@ -812,6 +813,23 @@ def register_handlers(dp):
     async def process_location(message: types.Message, state: FSMContext):
         """Process the shared location"""
         try:
+                    # İş saatleri kontrolü
+            current_hour = datetime.datetime.now().hour
+            
+            # Konfigürasyondan iş saatlerini al
+            from config import TIME_SLOTS_START_HOUR, TIME_SLOTS_END_HOUR
+            
+            # İş saatleri dışındaysa bildir ve durdur
+            if current_hour < TIME_SLOTS_START_HOUR or current_hour >= TIME_SLOTS_END_HOUR:
+                await message.answer(
+                    f"⏰ *Hal-hazırda iş vaxtı deyil.*\n\n"
+                    f"Ustalarımız sadəcə {TIME_SLOTS_START_HOUR}:00 - {TIME_SLOTS_END_HOUR}:00 saatlarında xidmət göstərməktədirlər.\n"
+                    f"Lütfən, iş vaxtı ərzində yenidən cəhd edin.",
+                    parse_mode="Markdown"
+                )
+                await state.finish()
+                await show_customer_menu(message)
+                return
             # Store location in state
             latitude = message.location.latitude
             longitude = message.location.longitude
@@ -823,19 +841,23 @@ def register_handlers(dp):
                 data['latitude'] = latitude
                 data['longitude'] = longitude
                 data['location_name'] = location_name
+                current_time = datetime.datetime.now()
+                data['date_time'] = current_time.strftime("%Y-%m-%d %H:%M")
             
-            # Get date keyboard (next 1 day)
-            keyboard = get_date_keyboard(days_ahead=1)
+            # Create note input keyboard
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            keyboard.add(KeyboardButton("❌ Sifarişi ləğv et"))
             
-            location_text = f"📍 Yeriniz: {location_name}" if location_name else "📍 Yeriniz qeydə alındı."
-            
+            # Ask for additional notes
             await message.answer(
-                f"{location_text}\n\n"
-                f"📅 İndi xidmətin tarixini seçin:",
+                f"📍 Yeriniz: {location_name if location_name else 'qeydə alındı'}\n\n"
+                "✍️ Zəhmət olmasa, probleminiz haqqında qısa məlumat yazın. "
+                "Bu, ustanın sizə daha yaxşı xidmət göstərməsinə kömək edəcək:",
                 reply_markup=keyboard
             )
             
-            await OrderStates.next()  # Move to date selection state
+            # Doğrudan not giriş aşamasına geç
+            await OrderStates.entering_note.set()
             
         except Exception as e:
             logger.error(f"Error in process_location: {e}")
@@ -846,114 +868,7 @@ def register_handlers(dp):
             await state.finish()
             await show_customer_menu(message)
     
-    # Handler for date selection
-    # In customer_handler.py - modify process_date_selection
-    @dp.callback_query_handler(lambda c: c.data.startswith('date_'), state=OrderStates.selecting_date)
-    async def process_date_selection(callback_query: types.CallbackQuery, state: FSMContext):
-        """Process the date selection"""
-        try:
-            # Extract date from callback data
-            selected_date = callback_query.data.split('_', 1)[1]
-            
-            # Store the selected date in state
-            async with state.proxy() as data:
-                data['date'] = selected_date
-            
-            # Get time slots keyboard with availability flag
-            keyboard, slots_available = get_time_slots_keyboard(selected_date)
-            
-            # Check if there are available slots
-            if not slots_available and selected_date == datetime.datetime.now().strftime("%Y-%m-%d"):
-                # No slots available for today
-                await callback_query.message.answer(
-                    "⚠️ Bu gün üçün artıq keçmiş saat seçə bilməzsiniz.\n\n"
-                    "Xahiş edirik, başqa bir tarix seçin və ya sabahkı tarix üçün sifariş verin.",
-                    reply_markup=get_date_keyboard(days_ahead=1)  # Show date selection again
-                )
-            else:
-                # Show available time slots
-                await callback_query.message.answer(
-                    "🕒 Xidmətin saatını seçin:",
-                    reply_markup=keyboard
-                )
-                
-                await OrderStates.next()  # Move to time selection state
-            
-            await callback_query.answer()  # Acknowledge the callback
-            
-        except Exception as e:
-            logger.error(f"Error in process_date_selection: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_customer_menu(callback_query.message)
     
-    # Handler for going back to date selection
-    @dp.callback_query_handler(lambda c: c.data == "back_to_date", state=OrderStates.selecting_time)
-    async def back_to_date_selection(callback_query: types.CallbackQuery, state: FSMContext):
-        """Go back to date selection"""
-        try:
-            # Get date keyboard
-            keyboard = get_date_keyboard(days_ahead=1)
-            
-            await callback_query.message.answer(
-                "📅 Xidmətin tarixini seçin:",
-                reply_markup=keyboard
-            )
-            
-            await callback_query.answer()  # Acknowledge the callback
-            await OrderStates.selecting_date.set()  # Go back to date selection state
-            
-        except Exception as e:
-            logger.error(f"Error in back_to_date_selection: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_customer_menu(callback_query.message)
-    
-    # Handler for time selection
-    @dp.callback_query_handler(lambda c: c.data.startswith('time_'), state=OrderStates.selecting_time)
-    async def process_time_selection(callback_query: types.CallbackQuery, state: FSMContext):
-        """Process the time selection"""
-        try:
-            # Extract time from callback data
-            selected_time = callback_query.data.split('_', 1)[1]
-            
-            # Store the selected time in state
-            async with state.proxy() as data:
-                data['time'] = selected_time
-                # Combine date and time for database
-                data['date_time'] = f"{data['date']} {selected_time}"
-                
-                # Format date and time for display
-                selected_date = data['date']
-                formatted_datetime = format_datetime(selected_date, selected_time)
-            
-            # Create note input keyboard
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-            keyboard.add(KeyboardButton("❌ Sifarişi ləğv et"))
-            
-            # Ask for additional notes
-            await callback_query.message.answer(
-                f"Seçdiyiniz tarix və saat: *{formatted_datetime}*\n\n"
-                "✍️ Zəhmət olmasa, probleminiz haqqında qısa məlumat yazın. "
-                "Bu, ustanın sizə daha yaxşı xidmət göstərməsinə kömək edəcək:",
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-            
-            await callback_query.answer()  # Acknowledge the callback
-            await OrderStates.next()  # Move to note input state
-            
-        except Exception as e:
-            logger.error(f"Error in process_time_selection: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_customer_menu(callback_query.message)
             
     # Handler for note input
     @dp.message_handler(state=OrderStates.entering_note)
@@ -969,10 +884,6 @@ def register_handlers(dp):
             async with state.proxy() as data:
                 data['note'] = message.text
                 
-                # Format date and time for display
-                selected_date = data['date']
-                selected_time = data['time']
-                formatted_datetime = format_datetime(selected_date, selected_time)
                 
                 # Get location name for display
                 location_display = data.get('location_name', 'Paylaşılan məkan')
@@ -985,7 +896,6 @@ def register_handlers(dp):
                 order_summary = (
                     "📋 *Sifariş məlumatları:*\n\n"
                     f"🛠 *Xidmət:* {service_text}\n"
-                    f"📅 *Tarix və saat:* {formatted_datetime}\n"
                     f"📍 *Yer:* {location_display}\n"
                     f"📝 *Qeyd:* {data['note']}\n\n"
                     f"Bu məlumatları təsdiqləyirsiniz?"
@@ -1014,7 +924,10 @@ def register_handlers(dp):
             await state.finish()
             await show_customer_menu(message)
     
-    # Handler for order confirmation
+
+
+
+
     @dp.callback_query_handler(lambda c: c.data == "confirm_order", state=OrderStates.confirming_order)
     async def confirm_order(callback_query: types.CallbackQuery, state: FSMContext):
         """Handle order confirmation"""
@@ -1040,6 +953,9 @@ def register_handlers(dp):
                 subservice=data.get('subservice')
             )
             
+            # Artisanları loglama
+            logger.info(f"Found {len(artisans) if artisans else 0} nearby artisans for service {service}")
+            
             if not artisans:
                 await callback_query.message.answer(
                     "❌ Təəssüf ki, hal-hazırda bu xidmət növü üzrə usta tapılmadı. "
@@ -1049,111 +965,109 @@ def register_handlers(dp):
                 await state.finish()
                 await show_customer_menu(callback_query.message)
                 return
-            
-            # Find the nearest artisan among available ones
-            nearest_artisan = None
-            min_distance = float('inf')
-            
-            for artisan in artisans:
-                # Determine the data structure (tuple or dict)
-                if isinstance(artisan, dict):
-                    artisan_id = artisan.get('id')
-                    artisan_latitude = artisan.get('latitude')
-                    artisan_longitude = artisan.get('longitude')
-                    artisan_name = artisan.get('name')
-                else:  # It's a tuple
-                    artisan_id = artisan[0]
-                    artisan_name = artisan[1]
-                    artisan_latitude = artisan[5] if len(artisan) > 5 else None
-                    artisan_longitude = artisan[6] if len(artisan) > 6 else None
                 
-                if artisan_latitude and artisan_longitude:
-                    from geo_helpers import calculate_distance
-                    distance = calculate_distance(
-                        data['latitude'], data['longitude'], 
-                        artisan_latitude, artisan_longitude
-                    )
-                    
-                    if distance < min_distance:
-                        min_distance = distance
-                        nearest_artisan = artisan
+            # Bolt-style sipariş bildirimi - "Sipariş aramaya başladık"
+            await callback_query.message.answer(
+                "🔍 *Sizin üçün usta axtarırıq...*\n\n"
+                "Sifarişiniz yerləşdirilib və uyğun ustalar axtarılır.\n"
+                "Bir usta tapıldığında dərhal sizə bildiriş edəcəyik.",
+                parse_mode="Markdown",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
             
-            # If no nearest found, just take the first one
-            if not nearest_artisan and artisans:
-                nearest_artisan = artisans[0]
-            
-            if nearest_artisan:
-                # Extract artisan ID and name based on type
-                if isinstance(nearest_artisan, dict):
-                    artisan_id = nearest_artisan.get('id')
-                    artisan_name = nearest_artisan.get('name')
-                else:  # It's a tuple
-                    artisan_id = nearest_artisan[0]
-                    artisan_name = nearest_artisan[1]
-                
-                # Determine which subservice to store (if any)
-                subservice = data.get('subservice')
-                
-                # Insert the order into the database
-                try:
-                    location_name = await get_location_name(data['latitude'], data['longitude'])
+            # Insert the order into the database with "searching" status
+            try:
+                location_name = await get_location_name(data['latitude'], data['longitude']) if 'latitude' in data and 'longitude' in data else "Bilinməyən yer"
 
-                    order_id = insert_order(
-                        customer_id=customer_id,
-                        artisan_id=artisan_id,
-                        service=service,
-                        date_time=data['date_time'],
-                        note=data['note'],
-                        latitude=data['latitude'],
-                        longitude=data['longitude'],
-                        location_name=location_name,
-                        subservice=subservice,
-                        status = "pending"
-                    )
-                    
-                    # Send confirmation to the customer
+                order_id = insert_order(
+                    customer_id=customer_id,
+                    artisan_id=None,  # Henüz bir ustaya atanmadı - 0'ı geçici ID olarak kullan
+                    service=service,
+                    date_time=data['date_time'],
+                    note=data['note'],
+                    latitude=data['latitude'],
+                    longitude=data['longitude'],
+                    location_name=location_name,
+                    subservice=data.get('subservice'),
+                    status="searching"  # "pending" yerine "searching" kullanıyoruz
+                )
+                
+                logger.info(f"Created new order with ID: {order_id}")
+                
+                if not order_id:
+                    logger.error("Failed to create order, no order_id returned")
                     await callback_query.message.answer(
-                        f"✅ Sifarişiniz uğurla qəbul olundu! (Sifariş #{order_id}).\n\n"
-                        f"*{artisan_name}* adlı ustaya sifarişiniz haqqında bildiriş göndərildi.\n"
-                        f"Usta sifarişinizi qəbul etdikdən sonra sizə xəbər veriləcək.",
-                        parse_mode="Markdown",
-                        reply_markup=types.ReplyKeyboardRemove()
-                    )
-                    
-                    # Import notification service
-                    try:
-                        from notification_service import notify_artisan_about_new_order
-                        
-                        # Notify artisan about new order
-                        await notify_artisan_about_new_order(order_id, artisan_id)
-                    except ImportError as ie:
-                        logger.error(f"Failed to import notification_service: {ie}")
-                    except Exception as e:
-                        logger.error(f"Failed to notify artisan: {e}")
-                    
-                    # Reset to main customer menu
-                    await show_customer_menu(callback_query.message)
-                    
-                except Exception as e:
-                    logger.error(f"Database error when inserting order: {e}")
-                    await callback_query.message.answer(
-                        f"❌ Sifariş yaradılarkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
+                        "❌ Sifariş yaradılarkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
                         reply_markup=types.ReplyKeyboardRemove()
                     )
                     await show_customer_menu(callback_query.message)
-            else:
+                    return
+                
+                # Ustalara toplu bildirim gönder - En az birkaç ustaya bildirim gönderebildiğimizi loglayalım
+                notification_sent = 0
+                
+                for artisan in artisans:
+                    # Ustanın tipini ve bilgilerini doğru şekilde çıkart
+                    if isinstance(artisan, dict):
+                        artisan_id = artisan.get('id')
+                        artisan_telegram_id = artisan.get('telegram_id')
+                    else:  # It's a tuple
+                        artisan_id = artisan[0]
+                        artisan_telegram_id = None
+                        # Telegram ID'sini bulmak için veritabanına sorgula
+                        artisan_details = get_artisan_by_id(artisan_id)
+                        if artisan_details:
+                            artisan_telegram_id = artisan_details.get('telegram_id')
+                    
+                    if artisan_telegram_id:
+                        try:
+                            # Daha dikkat çekici bildirim için klavye oluştur
+                            keyboard = InlineKeyboardMarkup(row_width=1)
+                            keyboard.add(
+                                InlineKeyboardButton("✅ Sifarişi qəbul et", callback_data=f"accept_order_{order_id}"),
+                                InlineKeyboardButton("❌ Sifarişi rədd et", callback_data=f"reject_order_{order_id}")
+                            )
+                            
+                            # Sipariş bilgilerini içeren mesaj metni
+                            message_text = (
+                                f"🔔 *YENİ SİFARİŞ!*\n\n"
+                                f"Sifariş #{order_id}\n"
+                                f"Xidmət: {service}\n"
+                                f"Alt xidmət: {data.get('subservice', 'Təyin edilməyib')}\n"
+                                f"Qeyd: {data['note']}\n\n"
+                                f"⏱ Bu sifariş 60 saniyə ərzində mövcuddur!"
+                            )
+                            
+                            await bot.send_message(
+                                chat_id=artisan_telegram_id,
+                                text=message_text,
+                                reply_markup=keyboard,
+                                parse_mode="Markdown"
+                            )
+                            notification_sent += 1
+                            logger.info(f"Notification sent to artisan {artisan_id} for order {order_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to notify artisan {artisan_id}: {e}")
+                
+                logger.info(f"Total {notification_sent} notifications sent for order {order_id}")
+                
+                # Schedule a check after 60 seconds
+                from order_status_service import check_order_acceptance
+                asyncio.create_task(check_order_acceptance(order_id, customer_id, 60))
+                    
+            except Exception as e:
+                logger.error(f"Database error when inserting order: {e}", exc_info=True)
                 await callback_query.message.answer(
-                    "❌ Təəssüf ki, hal-hazırda bu xidmət növü üzrə usta tapılmadı. "
-                    "Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
+                    f"❌ Sifariş yaradılarkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
                     reply_markup=types.ReplyKeyboardRemove()
                 )
                 await show_customer_menu(callback_query.message)
             
             await callback_query.answer()  # Acknowledge the callback
             await state.finish()  # End the conversation
-            
+                
         except Exception as e:
-            logger.error(f"Error in confirm_order: {e}")
+            logger.error(f"Error in confirm_order: {e}", exc_info=True)
             await callback_query.message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
@@ -1250,8 +1164,15 @@ def register_handlers(dp):
                 date_time = order.get('date_time')
                 note = order.get('note')
                 status = order.get('status')
-                artisan_name = order.get('artisan_name')
-                artisan_phone = order.get('artisan_phone')
+                # Usta bilgilerini maskelenmiş olarak al
+                artisan_id = order.get('artisan_id')
+                if artisan_id:
+                    artisan = wrap_get_dict_function(get_artisan_by_id)(artisan_id)
+                    artisan_name = artisan.get('name', 'Usta')
+                    artisan_phone = artisan.get('phone', 'Təyin edilməyib')
+                else:
+                    artisan_name = "Təyin edilməyib"
+                    artisan_phone = "Təyin edilməyib"
                 
                 # Tarih formatlama için try-except bloğu
                 try:
@@ -2306,18 +2227,40 @@ def register_handlers(dp):
             # Extract order ID from callback data
             order_id = int(callback_query.data.split('_')[-1])
             
+            # Önce sipariş detaylarını kontrol et
+            order = get_order_details(order_id)
+            if not order:
+                await callback_query.message.answer(
+                    "❌ Sifariş tapılmadı. Ləğv edilmiş ola bilər."
+                )
+                await callback_query.answer()
+                return
+            
+            telegram_id = callback_query.from_user.id
+            
+            # Önce mevcut context'i temizle - eski sipariş ID'lerini kaldır
+            try:
+                clear_user_context(telegram_id)
+            except Exception as e:
+                logger.error(f"Error clearing context: {e}")
+                # Hata olsa bile devam et
+            
             # Ask for receipt
             await callback_query.message.answer(
-                "📸 Zəhmət olmasa, ödəniş qəbzinin şəklini göndərin.\n\n"
-                "Bu, ödənişin təsdiqlənməsi üçün lazımdır. Şəkil aydın və oxunaqlı olmalıdır."
+                f"📸 Zəhmət olmasa, sifariş #{order_id} üçün ödəniş qəbzinin şəklini göndərin.\n\n"
+                f"Bu, ödənişin təsdiqlənməsi üçün lazımdır. Şəkil aydın və oxunaqlı olmalıdır."
             )
             
-            # Set context for receipt upload
-            telegram_id = callback_query.from_user.id
-            set_user_context(telegram_id, {
-                "action": "card_payment_receipt",
-                "order_id": order_id
-            })
+            # Set context for receipt upload with the current order ID - Her zaman string olarak kaydet
+            try:
+                set_user_context(str(telegram_id), {
+                    "action": "card_payment_receipt",
+                    "order_id": str(order_id),
+                    "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+            except Exception as e:
+                logger.error(f"Error setting context: {e}")
+                # Eğer context ayarlanamadıysa, varsayılan olarak işleme devam et
             
             # Log the action
             logger.info(f"Card payment completed action initiated for order {order_id}")
@@ -2421,29 +2364,73 @@ def register_handlers(dp):
             action = context.get('action')
             
             if action == 'card_payment_receipt':
-                order_id = context.get('order_id')
+                # Context'ten order_id almaya çalış - her zaman string'e dönüştür
+                try:
+                    # Önce string olarak almayı dene, değilse dönüştür
+                    order_id_str = context.get('order_id')
+                    if order_id_str is not None:
+                        order_id = int(str(order_id_str))
+                    else:
+                        order_id = None
+                except (ValueError, TypeError):
+                    order_id = None
+                
+                logger.info(f"Got order_id from context: {order_id}")
+                    
+                # Eğer context'teki order_id ile ilgili sipariş bulunamazsa veya sorun varsa
+                # kullanıcının en son aktif siparişini bulalım
+                if order_id:
+                    order = get_order_details(order_id)
+                else:
+                    order = None
+                    
+                if not order or order.get('status') == 'cancelled' or order.get('status') == 'completed':
+                    # Müşterinin aktif siparişlerini getir
+                    from db import execute_query
+                    query = """
+                        SELECT id FROM orders 
+                        WHERE customer_id = (SELECT id FROM customers WHERE telegram_id = %s)
+                        AND status IN ('accepted', 'pending')
+                        ORDER BY created_at DESC LIMIT 1
+                    """
+                    customer = get_customer_by_telegram_id(telegram_id)
+                    if customer:
+                        result = execute_query(query, (str(telegram_id),), fetchone=True)
+                        if result:
+                            order_id = result[0]
+                            logger.info(f"Found active order {order_id} for user {telegram_id} instead of {context.get('order_id')}")
                 
                 if not order_id:
-                    await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+                    await message.answer("❌ Aktif sifariş tapılmadı. Zəhmət olmasa yenidən sifariş verin.")
+                    # Emin olmak için context'i temizleyelim
+                    try:
+                        clear_user_context(telegram_id)
+                    except Exception as e:
+                        logger.error(f"Error clearing context: {e}")
                     return
                 
                 # Get the highest quality photo
                 photo = message.photo[-1]
                 file_id = photo.file_id
                 
+                logger.info(f"Attempting to save payment receipt for order {order_id} (from user context or active orders)")
+                
                 # Save receipt to database
                 success = save_payment_receipt(order_id, file_id)
                 
                 if success:
                     # Clear user context
-                    clear_user_context(telegram_id)
+                    try:
+                        clear_user_context(telegram_id)
+                    except Exception as e:
+                        logger.error(f"Error clearing context after successful payment: {e}")
                     
                     # Mark order as completed
                     update_order_status(order_id, "completed")
                     
                     await message.answer(
-                        "✅ Ödəniş qəbzi uğurla yükləndi!\n\n"
-                        "Sifarişiniz tamamlandı. Təşəkkür edirik!",
+                        f"✅ Ödəniş qəbzi uğurla yükləndi!\n\n"
+                        f"Sifariş #{order_id} tamamlandı. Təşəkkür edirik!",
                         reply_markup=types.ReplyKeyboardRemove()
                     )
                     
@@ -2953,15 +2940,12 @@ def register_handlers(dp):
                     f"Ustanı {'⭐' * rating} ulduzla qiymətləndirdiniz."
                 )
                 
-                # Notify artisan about the review
+                # Notify artisan about the review but keep it anonymous
                 artisan_telegram_id = get_artisan_by_id(order['artisan_id']).get('telegram_id')
                 if artisan_telegram_id:
                     await bot.send_message(
                         chat_id=artisan_telegram_id,
-                        text=f"⭐ *Yeni rəy aldınız!*\n\n"
-                            f"Sifariş #{order_id} üçün müştəridən {'⭐' * rating} "
-                            f"({rating}/5) qiymətləndirmə aldınız.\n"
-                            f"{f'💬 Şərh: {comment}' if comment else ''}",
+                        text=f"⭐ *Yeni rəy aldınız!*\n",
                         parse_mode="Markdown"
                     )
             else:
@@ -3063,3 +3047,40 @@ def register_handlers(dp):
 
     # Əmr bələdçisi funksiyasını əlavə et
     dp.register_message_handler(show_command_guide, lambda message: message.text == "ℹ️ Əmr bələdçisi")
+
+    @dp.callback_query_handler(lambda c: c.data.startswith('review_'))
+    async def handle_review_callback(callback_query: types.CallbackQuery, state: FSMContext):
+        """Process review callbacks with format review_order_rating"""
+        try:
+            # Extract order ID and rating from callback data
+            parts = callback_query.data.split('_')
+            if len(parts) == 3:
+                order_id = int(parts[1])
+                rating = int(parts[2])
+                
+                # Store rating in state
+                async with state.proxy() as data:
+                    data['order_id'] = order_id
+                    data['rating'] = rating
+                
+                # Ask for comment
+                await callback_query.message.answer(
+                    f"Seçdiyiniz qiymətləndirmə: {'⭐' * rating}\n\n"
+                    f"İstəsəniz, əlavə şərh də yaza bilərsiniz. Əgər şərh yazmaq istəmirsinizsə, "
+                    f"'Şərh yoxdur' yazın."
+                )
+                
+                # Set state to wait for comment
+                await OrderRatingState.waiting_for_comment.set()
+                
+                await callback_query.answer()
+            else:
+                await callback_query.answer("Düzgün qiymətləndirmə formatı deyil")
+            
+        except Exception as e:
+            logger.error(f"Error in handle_review_callback: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await callback_query.answer()
+            await state.finish()

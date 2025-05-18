@@ -4,10 +4,12 @@ import mysql.connector
 from mysql.connector import Error
 from mysql.connector.cursor import MySQLCursorDict
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 from config import DB_CONFIG, COMMISSION_RATES
+from crypto_service import encrypt_data
+import hashlib
 
 # Set up logging
 logging.basicConfig(
@@ -96,13 +98,12 @@ def get_customer_by_telegram_id(telegram_id):
     Returns:
         dict: Customer information or None if not found
     """
+    telegram_id_hash = hash_telegram_id(telegram_id)
     query = """
         SELECT * FROM customers 
-        WHERE telegram_id = %s
+        WHERE telegram_id_hash = %s
     """
-    
-    result = execute_query(query, (telegram_id,), fetchone=True, dict_cursor=True)
-    
+    result = execute_query(query, (telegram_id_hash,), fetchone=True, dict_cursor=True)
     return result
 
 
@@ -137,17 +138,30 @@ def create_customer(telegram_id, name, phone=None, city=None):
     Returns:
         int: ID of the created customer
     """
-    query = """
-        INSERT INTO customers (telegram_id, name, phone, city, created_at)
-        VALUES (%s, %s, %s, %s, NOW())
-    """
+    telegram_id_hash = hash_telegram_id(telegram_id)
+    encrypted_telegram_id = encrypt_data(telegram_id)
     
+    # Limit name length to 45 characters before encryption to prevent database errors
+    if name and len(name) > 45:
+        name = name[:45]
+    
+    name = encrypt_data(name)
+    
+    # Limit phone length if provided
+    if phone and len(phone) > 20:
+        phone = phone[:20]
+        
+    phone = encrypt_data(phone) if phone else None
+    query = """
+        INSERT INTO customers (telegram_id, telegram_id_hash, name, phone, city, created_at)
+        VALUES (%s, %s, %s, %s, %s, NOW())
+    """
     conn = None
     cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(query, (telegram_id, name, phone, city))
+        cursor.execute(query, (encrypted_telegram_id, telegram_id_hash, name, phone, city))
         conn.commit()
         return cursor.lastrowid
     except Error as e:
@@ -249,20 +263,9 @@ def get_customer_orders(customer_id):
 # -------------------------
 
 def get_artisan_by_telegram_id(telegram_id):
-    """Get artisan ID by Telegram ID
-    
-    Args:
-        telegram_id (int): Telegram user ID
-        
-    Returns:
-        int: Artisan ID or None if not found
-    """
-    query = """
-        SELECT id FROM artisans 
-        WHERE telegram_id = %s
-    """
-    result = execute_query(query, (telegram_id,), fetchone=True)
-    
+    telegram_id_hash = hash_telegram_id(telegram_id)
+    query = "SELECT id FROM artisans WHERE telegram_id_hash = %s"
+    result = execute_query(query, (telegram_id_hash,), fetchone=True)
     return result[0] if result else None
 
 
@@ -324,6 +327,8 @@ def check_artisan_exists(telegram_id=None, phone=None, exclude_id=None):
     result = execute_query(query, params, fetchone=True)
     return result is not None
 
+def hash_telegram_id(telegram_id):
+    return hashlib.sha256(str(telegram_id).encode()).hexdigest()
 
 def create_artisan(telegram_id, name, phone, service, location=None, city=None, latitude=None, longitude=None):
     """Create a new artisan and return their ID
@@ -341,10 +346,25 @@ def create_artisan(telegram_id, name, phone, service, location=None, city=None, 
     Returns:
         int: ID of the created artisan
     """
+    telegram_id_hash = hash_telegram_id(telegram_id)
+    encrypted_telegram_id = encrypt_data(telegram_id)
+    
+    # Limit name length to 45 characters before encryption to prevent database errors
+    if name and len(name) > 200:
+        name = name[:200]
+        
+    name = encrypt_data(name)
+    
+    # Limit phone length if needed
+    if phone and len(phone) > 200:
+        phone = phone[:200]
+        
+    phone = encrypt_data(phone)
+
     query = """
-        INSERT INTO artisans (telegram_id, name, phone, service, location, city, 
+        INSERT INTO artisans (telegram_id, telegram_id_hash, name, phone, service, location, city, 
                               latitude, longitude, active, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW())
     """
     
     conn = None
@@ -352,7 +372,7 @@ def create_artisan(telegram_id, name, phone, service, location=None, city=None, 
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(query, (telegram_id, name, phone, service, location, city, latitude, longitude))
+        cursor.execute(query, (encrypted_telegram_id, telegram_id_hash, name, phone, service, location, city, latitude, longitude))
         conn.commit()
         return cursor.lastrowid
     except Error as e:
@@ -406,6 +426,42 @@ def get_or_create_artisan(telegram_id, name, phone, service, location=None, city
         
     return artisan_id
 
+def update_artisan_for_order(order_id, artisan_id):
+    """Siparişe usta ata"""
+    try:
+        if not order_id:
+            logger.error("Cannot update artisan: order_id is None")
+            return False
+        
+        logger.info(f"Updating order {order_id} with artisan ID {artisan_id}")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE orders
+            SET artisan_id = %s
+            WHERE id = %s
+        """, (artisan_id, order_id))
+        
+        affected_rows = cursor.rowcount
+        conn.commit()
+        
+        if affected_rows == 0:
+            logger.warning(f"No order updated with ID {order_id}")
+            return False
+        
+        logger.info(f"Successfully updated order {order_id} with artisan {artisan_id}")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error in update_artisan_for_order: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 def update_artisan_profile(artisan_id, data):
     """Update artisan profile information
@@ -444,6 +500,119 @@ def update_artisan_profile(artisan_id, data):
         logger.error(f"Error updating artisan profile: {e}")
         return False
 
+def skip_artisan_for_next_order(artisan_id):
+    """Ustanın növbəti bir sifarişdən kənarlaşdırılması üçün işarələyir
+    
+    Args:
+        artisan_id (int): Ustanın ID-si
+        
+    Returns:
+        bool: True əgər əməliyyat uğurludursa, əks halda False
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Cədvəlin mövcud olub-olmadığını yoxla
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s AND table_name = 'artisan_skip_next_order'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()[0] > 0
+        
+        # Cədvəl yoxdursa yarat
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE artisan_skip_next_order (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    artisan_id INT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    skipped BOOLEAN DEFAULT FALSE,
+                    FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE
+                )
+            """)
+        
+        # Mövcud qeydləri yoxla
+        cursor.execute(
+            "SELECT id FROM artisan_skip_next_order WHERE artisan_id = %s AND skipped = FALSE",
+            (artisan_id,)
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Artıq bir qeyd varsa, güncəllənmə etmə
+            logger.info(f"Artisan {artisan_id} already marked to skip next order")
+        else:
+            # Yeni qeyd yarat
+            cursor.execute(
+                """
+                INSERT INTO artisan_skip_next_order (artisan_id, skipped)
+                VALUES (%s, FALSE)
+                """,
+                (artisan_id,)
+            )
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error in skip_artisan_for_next_order: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def should_skip_artisan_for_order(artisan_id):
+    """Ustanın cari sifariş üçün kənarlaşdırılması lazım olub-olmadığını yoxlayır
+    
+    Args:
+        artisan_id (int): Ustanın ID-si
+        
+    Returns:
+        bool: True əgər kənarlaşdırılmalıdırsa, əks halda False
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Əvvəlcə cədvəli yoxla
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s AND table_name = 'artisan_skip_next_order'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()[0] > 0
+        
+        if not table_exists:
+            return False
+        
+        # Kənarlaşdırılmalı olan bir sifariş varmı?
+        cursor.execute(
+            "SELECT id FROM artisan_skip_next_order WHERE artisan_id = %s AND skipped = FALSE",
+            (artisan_id,)
+        )
+        record = cursor.fetchone()
+        
+        if record:
+            # Qeydi yenilə - artıq kənarlaşdırılmış kimi işarələ
+            cursor.execute(
+                "UPDATE artisan_skip_next_order SET skipped = TRUE WHERE id = %s",
+                (record[0],)
+            )
+            conn.commit()
+            return True
+        
+        return False
+    except Exception as e:
+        logger.error(f"Error in should_skip_artisan_for_order: {e}")
+        return False  # Xəta halında təhlükəsiz tərəf - kənarlaşdırma
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 def update_artisan_location(artisan_id, latitude, longitude, location_name=None, city=None):
     """Update an artisan's location
@@ -907,96 +1076,79 @@ def get_nearby_artisans(latitude, longitude, radius=10, service=None, subservice
 # ORDER RELATED FUNCTIONS
 # -------------------------
 
-def insert_order(customer_id, artisan_id, service, date_time, note, latitude=None, longitude=None, location_name=None, status='pending', subservice=None):
-    """Insert a new order into the database
-    
-    Args:
-        customer_id (int): ID of the customer
-        artisan_id (int): ID of the artisan
-        service (str): Type of service requested
-        date_time (str): Date and time for the service
-        note (str): Additional information about the order
-        latitude (float, optional): Customer's latitude
-        longitude (float, optional): Customer's longitude
-        location_name (str, optional): Name of the location
-        status (str, optional): Order status (default: 'pending')
-        subservice (str, optional): Specific subservice requested
-        
-    Returns:
-        int: ID of the inserted order
-    """
-    
-    query = """
-    INSERT INTO orders (customer_id, artisan_id, service, date_time, note,
-                   latitude, longitude, location_name, status, subservice, created_at)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-    """
-    
-    # Parse date_time string to datetime object if needed
-    if isinstance(date_time, str):
-        try:
-            # Try to parse the date_time string
-            date_time = datetime.strptime(date_time, "%Y-%m-%d %H:%M")
-        except ValueError:
-            # If it's not in the expected format, keep it as is
-            pass
-    
-    conn = None
-    cursor = None
+def insert_order(customer_id, service, date_time, note, latitude, longitude, location_name, subservice=None, status="pending", artisan_id=None):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            query,
-            (customer_id, artisan_id, service, date_time, note, latitude, longitude, location_name, status, subservice)
-        )
+        
+        # Artisan ID NULL olarsa ona görə SQL sorğusunu dəyişdirin
+        if artisan_id is None:
+            query = """
+                INSERT INTO orders (customer_id, service, subservice, date_time, note, 
+                              latitude, longitude, location_name, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cursor.execute(query, (
+                customer_id, service, subservice, date_time, note, 
+                latitude, longitude, location_name, status
+            ))
+        else:
+            query = """
+                INSERT INTO orders (customer_id, artisan_id, service, subservice, date_time, note, 
+                              latitude, longitude, location_name, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cursor.execute(query, (
+                customer_id, artisan_id, service, subservice, date_time, note, 
+                latitude, longitude, location_name, status
+            ))
+        
+        order_id = cursor.lastrowid
         conn.commit()
-        return cursor.lastrowid
+        return order_id
+        
     except Exception as e:
-        logger.error(f"Error inserting order: {e}")
+        logger.error(f"Error inserting order: {e}", exc_info=True)
         if conn:
             conn.rollback()
         return None
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 
 def get_order_details(order_id):
-    """Get detailed information about an order
-    
-    Args:
-        order_id (int): ID of the order
+    """Get detailed information about an order"""
+    try:
+        if not order_id:
+            logger.warning("get_order_details called with None order_id")
+            return None
+            
+        # Log the request for troubleshooting
+        logger.info(f"Getting details for order ID: {order_id}")
         
-    Returns:
-        dict: Order details or None if not found
-    """
-    query = """
-        SELECT o.*, 
-               c.name as customer_name, c.phone as customer_phone,
-               a.name as artisan_name, a.phone as artisan_phone, 
-               o.latitude, o.longitude, o.location_name,
-               COALESCE(op.amount, o.price) as price,
-               op.admin_fee, op.artisan_amount, 
-               op.payment_status, op.payment_method
-        FROM orders o
-        JOIN customers c ON o.customer_id = c.id
-        JOIN artisans a ON o.artisan_id = a.id
-        LEFT JOIN order_payments op ON o.id = op.order_id
-        WHERE o.id = %s
-    """
-    
-    result = execute_query(query, (order_id,), fetchone=True, dict_cursor=True)
-    
-    # Extra logging for debugging
-    if result:
-        logger.info(f"Retrieved order details for order {order_id}. Price: {result.get('price')}")
-    else:
-        logger.warning(f"No order found with ID {order_id}")
-    
-    return result
+        query = """
+            SELECT o.*, c.name as customer_name, c.phone as customer_phone, 
+                   a.name as artisan_name, a.phone as artisan_phone
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            LEFT JOIN artisans a ON o.artisan_id = a.id
+            WHERE o.id = %s
+        """
+        
+        result = execute_query(query, (order_id,), fetchone=True, dict_cursor=True)
+        
+        if not result:
+            logger.warning(f"No order found with ID {order_id}")
+            return None
+            
+        logger.info(f"Found order: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in get_order_details: {e}")
+        return None
 
 
 def update_order_status(order_id, status):
@@ -1315,18 +1467,22 @@ def confirm_payment(order_id, is_verified=True):
 # -------------------------
 # USER CONTEXT FUNCTIONS
 # -------------------------
+from crypto_service import encrypt_data, decrypt_data
 
 def set_user_context(telegram_id, context_data):
     """Set context data for a user
     
     Args:
-        telegram_id (int): Telegram user ID
+        telegram_id (int or str): Telegram user ID (can be encrypted)
         context_data (dict or str): Context data to store
         
     Returns:
         bool: True if successful, False otherwise
     """
     try:
+        # Always convert telegram_id to string to avoid database type issues
+        telegram_id_str = str(telegram_id)
+        
         # Ensure we're storing JSON in the database
         context_json = None
         
@@ -1362,52 +1518,17 @@ def set_user_context(telegram_id, context_data):
             conn = get_connection()
             cursor = conn.cursor()
             
-            # Check if user_context table exists
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM information_schema.tables 
-                WHERE table_schema = %s 
-                AND table_name = 'user_context'
-            """, (DB_CONFIG['database'],))
+            # Delete any existing records for this telegram_id - always use string
+            cursor.execute("DELETE FROM user_context WHERE telegram_id = %s", (telegram_id_str,))
             
-            table_exists = cursor.fetchone()[0] > 0
-            
-            # Create table if it doesn't exist
-            if not table_exists:
-                cursor.execute("""
-                    CREATE TABLE user_context (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        telegram_id BIGINT UNIQUE,
-                        context_data JSON,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                    )
-                """)
-            
-            # Check if context exists
+            # Insert new context - always as string
             cursor.execute(
-                "SELECT id FROM user_context WHERE telegram_id = %s",
-                (telegram_id,)
+                """
+                INSERT INTO user_context (telegram_id, context_data, created_at, updated_at)
+                VALUES (%s, %s, NOW(), NOW())
+                """,
+                (telegram_id_str, context_json)
             )
-            context_exists = cursor.fetchone()
-            
-            if context_exists:
-                cursor.execute(
-                    """
-                    UPDATE user_context 
-                    SET context_data = %s, updated_at = NOW()
-                    WHERE telegram_id = %s
-                    """,
-                    (context_json, telegram_id)
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO user_context (telegram_id, context_data, created_at, updated_at)
-                    VALUES (%s, %s, NOW(), NOW())
-                    """,
-                    (telegram_id, context_json)
-                )
             
             conn.commit()
             return True
@@ -1429,13 +1550,16 @@ def get_user_context(telegram_id):
     """Get context data for a user
     
     Args:
-        telegram_id (int): Telegram user ID
+        telegram_id (int or str): Telegram user ID (can be encrypted)
         
     Returns:
         dict: Context data or empty dict if not found
     """
     conn = None
     try:
+        # Always convert telegram_id to string
+        telegram_id_str = str(telegram_id)
+        
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
         
@@ -1452,9 +1576,10 @@ def get_user_context(telegram_id):
         if not table_exists:
             return {}
         
+        # Always query with the string version
         cursor.execute(
             "SELECT context_data FROM user_context WHERE telegram_id = %s",
-            (telegram_id,)
+            (telegram_id_str,)
         )
         result = cursor.fetchone()
         
@@ -1486,13 +1611,16 @@ def clear_user_context(telegram_id):
     """Clear context data for a user
     
     Args:
-        telegram_id (int): Telegram user ID
+        telegram_id (int or str): Telegram user ID (can be encrypted)
         
     Returns:
         bool: True if successful, False otherwise
     """
     conn = None
     try:
+        # Always convert telegram_id to string
+        telegram_id_str = str(telegram_id)
+        
         conn = get_connection()
         cursor = conn.cursor()
         
@@ -1509,9 +1637,10 @@ def clear_user_context(telegram_id):
         if not table_exists:
             return True  # No table means nothing to clear
         
+        # Always use string version
         cursor.execute(
             "DELETE FROM user_context WHERE telegram_id = %s",
-            (telegram_id,)
+            (telegram_id_str,)
         )
         
         conn.commit()
@@ -1890,8 +2019,12 @@ def block_customer(customer_id, reason, required_payment, block_hours=24):
             (customer_id,)
         )
         
-        # Calculate block until time
-        block_until = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Calculate block duration
+        if block_hours > 0:
+            block_timestamp = datetime.datetime.now() + datetime.timedelta(hours=block_hours)
+            block_until = block_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            block_until = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Insert block record
         cursor.execute(
@@ -2304,3 +2437,58 @@ def mark_admin_payment_completed(order_id):
     finally:
         if conn and conn.is_connected():
             conn.close()
+
+# Encryption wrappers
+from db_encryption_wrapper import (
+    wrap_create_customer, wrap_create_artisan, wrap_get_dict_function,
+    wrap_get_list_function, wrap_update_customer_profile, wrap_update_artisan_profile
+)
+
+# Normal (şifresi çözülmüş ama maskelenmemiş) versiyonlar - kendi verilerini görüntülemek için
+get_customer_by_telegram_id = wrap_get_dict_function(get_customer_by_telegram_id, decrypt=True, mask=False)
+get_customer_by_id = wrap_get_dict_function(get_customer_by_id, decrypt=True, mask=False)
+create_customer = wrap_create_customer(create_customer)
+update_customer_profile = wrap_update_customer_profile(update_customer_profile)
+get_customer_orders = wrap_get_list_function(get_customer_orders, decrypt=True, mask=False)
+get_artisan_by_id = wrap_get_dict_function(get_artisan_by_id, decrypt=True, mask=False)
+create_artisan = wrap_create_artisan(create_artisan)
+update_artisan_profile = wrap_update_artisan_profile(update_artisan_profile)
+get_artisan_active_orders = wrap_get_list_function(get_artisan_active_orders, decrypt=True, mask=False)
+get_order_details = wrap_get_dict_function(get_order_details, decrypt=True, mask=False)
+debug_order_payment = wrap_get_dict_function(debug_order_payment, decrypt=True, mask=False)
+
+# Ekstra: Hassas veri döndüren diğer fonksiyonlar için de wrapper ekle
+get_artisan_by_service = wrap_get_list_function(get_artisan_by_service)
+get_nearby_artisans = wrap_get_list_function(get_nearby_artisans)
+get_artisan_reviews = wrap_get_list_function(get_artisan_reviews)
+
+def save_payment_card_info(artisan_id, card_number, card_holder):
+    card_number = encrypt_data(card_number)
+    card_holder = encrypt_data(card_holder)
+    # ... insert into DB
+
+# Maskelenmiş fonksiyonlar - diğer kullanıcılara görüntülenecek veriler için
+def get_masked_customer_by_id(customer_id):
+    """Müşteri bilgilerini maskelenmiş olarak al"""
+    return wrap_get_dict_function(get_customer_by_id, decrypt=True, mask=True)(customer_id)
+
+def get_masked_artisan_by_id(artisan_id):
+    """Usta bilgilerini maskelenmiş olarak al"""
+    return wrap_get_dict_function(get_artisan_by_id, decrypt=True, mask=True)(artisan_id)
+
+def get_masked_order_details(order_id):
+    """Sipariş detaylarını maskelenmiş olarak al"""
+    return wrap_get_dict_function(get_order_details, decrypt=True, mask=True)(order_id)
+
+get_artisan_by_service = wrap_get_list_function(get_artisan_by_service, decrypt=True, mask=False)
+get_nearby_artisans = wrap_get_list_function(get_nearby_artisans, decrypt=True, mask=False)
+get_artisan_reviews = wrap_get_list_function(get_artisan_reviews, decrypt=True, mask=False)
+
+# Maskelenmiş listeler için fonksiyon
+def get_masked_customer_orders(customer_id):
+    """Müşteri siparişlerini maskelenmiş olarak al"""
+    return wrap_get_list_function(get_customer_orders, decrypt=True, mask=True)(customer_id)
+
+def get_masked_artisan_active_orders(artisan_id):
+    """Usta aktif siparişlerini maskelenmiş olarak al"""
+    return wrap_get_list_function(get_artisan_active_orders, decrypt=True, mask=True)(artisan_id)

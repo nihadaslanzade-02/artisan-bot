@@ -5,6 +5,8 @@ from dispatcher import *
 from db import *
 from notification_service import *
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from db_encryption_wrapper import wrap_get_dict_function, wrap_get_list_function
+from crypto_service import mask_card_number, mask_phone, mask_name
 
 # Set up logging
 logging.basicConfig(
@@ -284,8 +286,9 @@ async def request_customer_card_details(order_id, amount, reason):
             logger.error(f"Order {order_id} not found for refund request")
             return False
         
-        # Get customer details
-        customer = get_customer_by_id(order.get('customer_id'))
+        # Get customer details - normal version for direct contact
+        customer_id = order.get('customer_id')
+        customer = get_customer_by_id(customer_id)
         if not customer:
             logger.error(f"Customer not found for order {order_id}")
             return False
@@ -316,7 +319,7 @@ async def request_customer_card_details(order_id, amount, reason):
         keyboard = InlineKeyboardMarkup()
         keyboard.add(InlineKeyboardButton("❌ İmtina et", callback_data=f"decline_refund_{refund_id}"))
         
-        # Send request to customer
+        # Send request to customer - using normal (unmasked) data for direct communication
         await bot.send_message(
             chat_id=customer_telegram_id,
             text=f"💰 *Ödəniş qaytarılması*\n\n"
@@ -326,6 +329,27 @@ async def request_customer_card_details(order_id, amount, reason):
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        
+        # For admin notifications - get masked customer details
+        from db_encryption_wrapper import wrap_get_dict_function
+        masked_customer = wrap_get_dict_function(get_customer_by_id, mask=True)(customer_id)
+        masked_customer_name = masked_customer.get('name', 'Müştəri')
+        
+        # Notify admins about the refund request creation with masked data
+        for admin_id in BOT_ADMINS:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=f"💰 *Yeni ödəniş qaytarma tələbi*\n\n"
+                         f"Sifariş: #{order_id}\n"
+                         f"Müştəri: {masked_customer_name} (ID: {customer_id})\n"
+                         f"Məbləğ: {amount} AZN\n"
+                         f"Səbəb: {reason}\n\n"
+                         f"Müştəridən kart məlumatları gözlənilir.",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify admin {admin_id} about refund request creation: {e}")
         
         logger.info(f"Refund request sent to customer for order {order_id}, amount: {amount} AZN")
         return True
@@ -346,50 +370,70 @@ async def process_customer_card_details(customer_id, card_number, refund_id):
         bool: True if successful, False otherwise
     """
     try:
-        # Update refund request with card details
+        # 1. İlk olaraq kart məlumatlarını təhlükəsiz şəkildə saxla
+        from payment_service import secure_store_card_details
+        
+        # Get refund details and order_id
+        from db import get_refund_request
+        refund = get_refund_request(refund_id)
+        if not refund:
+            logger.error(f"Refund request {refund_id} not found")
+            return False
+            
+        order_id = refund.get('order_id')
+        
+        # Kart məlumatlarını şifrələnmiş şəkildə saxla
+        # İstifadəçinin kart nömrəsini şifrələyərək saxlayır və yalnız əlaqəli açarla deşifrə edilə bilər
+        success = secure_store_card_details(order_id, card_number)
+        
+        if not success:
+            logger.error(f"Failed to securely store card details for order {order_id}")
+        
+        # 2. Refund request-i yenilə, lakin kart nömrəsini birbaşa saxlama
         from db import update_refund_request
         success = update_refund_request(refund_id, {
-            'card_number': card_number,
             'status': 'pending_admin'
+            # Kart nömrəsini refund cədvəlində saxlamırıq. Əvəzinə, payment_card_details cədvəlində şifrələnmiş formada saxlayırıq.
         })
         
         if not success:
-            logger.error(f"Failed to update refund request {refund_id} with card details")
-            return False
-        
-        # Get refund details
-        from db import get_refund_request
-        refund = get_refund_request(refund_id)
-        
-        if not refund:
-            logger.error(f"Refund request {refund_id} not found after update")
+            logger.error(f"Failed to update refund request {refund_id}")
             return False
         
         # Get order details
-        order_id = refund.get('order_id')
+        from db import get_order_details
         order = get_order_details(order_id)
         
         if not order:
             logger.error(f"Order {order_id} not found for refund notification")
             return False
         
-        # Get customer details
-        customer = get_customer_by_id(customer_id)
-        if not customer:
-            logger.error(f"Customer {customer_id} not found for refund notification")
-            return False
+        # 3. Maskalanmış məlumatları almaq üçün xüsusi wrapper funksiya istifadə et
+        from db_encryption_wrapper import wrap_get_dict_function
+        from db import get_customer_by_id
+        from crypto_service import mask_card_number
         
-        # Notify all admins about the refund request
+        # Müştəri məlumatlarını maskalanmış şəkildə al
+        masked_customer = get_masked_customer_by_id(customer_id)
+        
+        # Ad, telefon məlumatları maskalanmış olacaq, məs: "J*** D***"
+        customer_name = masked_customer.get('name', 'Unknown')
+        
+        # Kart numarasını maskele
+        from crypto_service import mask_card_number
+        card_number_display = mask_card_number(card_number)
+        
+        # 4. Adminlərə həssas məlumatları maskalanmış şəkildə göndər
         for admin_id in BOT_ADMINS:
             try:
                 await bot.send_message(
                     chat_id=admin_id,
                     text=f"💳 *Yeni kart məlumatları*\n\n"
                          f"Sifariş: #{order_id}\n"
-                         f"Müştəri: {customer.get('name')} (ID: {customer_id})\n"
+                         f"Müştəri: {customer_name} (ID: {customer_id})\n"
                          f"Məbləğ: {refund.get('amount')} AZN\n"
                          f"Səbəb: {refund.get('reason')}\n"
-                         f"Kart nömrəsi: `{card_number}`\n\n"
+                         f"Kart nömrəsi: `{card_number_display}`\n\n"
                          f"Ödənişi tamamladıqdan sonra aşağıdakı düyməni istifadə edin:",
                     reply_markup=InlineKeyboardMarkup().add(
                         InlineKeyboardButton("✅ Ödəniş edildi", callback_data=f"refund_completed_{refund_id}")
@@ -399,8 +443,12 @@ async def process_customer_card_details(customer_id, card_number, refund_id):
             except Exception as e:
                 logger.error(f"Failed to notify admin {admin_id} about refund request: {e}")
         
-        # Notify customer about the next steps
+        # 5. Müştəriyə məlumat göndər - normal, maskalanmamış şəkildə
+        # Bu, müştərinin öz məlumatları olduğu üçün maskalanmağa ehtiyac yoxdur
+        # Get normal customer data (not masked)
+        customer = get_customer_by_id(customer_id)
         customer_telegram_id = customer.get('telegram_id')
+        
         if customer_telegram_id:
             await bot.send_message(
                 chat_id=customer_telegram_id,
@@ -455,7 +503,7 @@ async def complete_refund_process(refund_id, admin_id):
             logger.error(f"Order {order_id} not found for refund completion")
             return False
         
-        # Get customer details
+        # Get customer details - normal version for notification to customer
         customer_id = order.get('customer_id')
         customer = get_customer_by_id(customer_id)
         
@@ -463,7 +511,50 @@ async def complete_refund_process(refund_id, admin_id):
             logger.error(f"Customer {customer_id} not found for refund completion")
             return False
         
-        # Notify customer about the completed refund
+        # For admin notifications - get masked customer data
+        from db_encryption_wrapper import wrap_get_dict_function
+        masked_customer = wrap_get_dict_function(get_customer_by_id, mask=True)(customer_id)
+        masked_customer_name = masked_customer.get('name', 'Müştəri')
+        
+        # Get card details in masked form for admin confirmation
+        from payment_service import get_card_details
+        masked_card = get_card_details(order_id, mask=True)
+        card_display = "Kart məlumatı yoxdur"
+        if masked_card:
+            card_display = masked_card.get('card_number', 'Kart məlumatı yoxdur')
+        
+        # Notify the admin who completed the refund
+        try:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=f"✅ *Ödəniş qaytarma tamamlandı*\n\n"
+                     f"Sifariş: #{order_id}\n"
+                     f"Müştəri: {masked_customer_name} (ID: {customer_id})\n"
+                     f"Məbləğ: {refund.get('amount')} AZN\n"
+                     f"Kart: {card_display}\n\n"
+                     f"Müştəriyə bildiriş göndərildi.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify admin {admin_id} about completed refund: {e}")
+        
+        # Notify other admins about the completed refund with masked data
+        for other_admin in BOT_ADMINS:
+            if other_admin != admin_id:  # Skip the admin who completed the refund
+                try:
+                    await bot.send_message(
+                        chat_id=other_admin,
+                        text=f"✅ *Ödəniş qaytarma tamamlandı*\n\n"
+                             f"Sifariş: #{order_id}\n"
+                             f"Müştəri: {masked_customer_name} (ID: {customer_id})\n"
+                             f"Məbləğ: {refund.get('amount')} AZN\n"
+                             f"Admin: {admin_id} tərəfindən icra edildi",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify admin {other_admin} about completed refund: {e}")
+        
+        # Notify customer about the completed refund - using normal (unmasked) data
         customer_telegram_id = customer.get('telegram_id')
         if customer_telegram_id:
             await bot.send_message(

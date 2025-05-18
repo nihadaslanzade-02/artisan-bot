@@ -3,7 +3,7 @@
 import asyncio
 import datetime
 from aiogram import Bot
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import *
 from dispatcher import bot, dp
 from db import (
     get_artisan_by_id, get_customer_by_id, get_order_details,
@@ -11,6 +11,7 @@ from db import (
     get_connection
 )
 import logging
+from db_encryption_wrapper import wrap_get_dict_function
 
 # Set up logging
 logging.basicConfig(
@@ -73,7 +74,7 @@ async def schedule_arrival_check(order_id, artisan_id, scheduled_time):
             return
         
         # Get artisan details
-        artisan = get_artisan_by_id(artisan_id)
+        artisan = wrap_get_dict_function(get_artisan_by_id)(order['artisan_id'])
         if not artisan:
             logger.error(f"Artisan {artisan_id} not found for arrival check")
             return
@@ -106,6 +107,49 @@ async def schedule_arrival_check(order_id, artisan_id, scheduled_time):
     except Exception as e:
         logger.error(f"Error in schedule_arrival_check: {e}", exc_info=True)
 
+async def check_order_acceptance(order_id, customer_id, timeout_seconds):
+    """Sifarişin müəyyən müddət ərzində qəbul edilib-edilmədiyini yoxlayan funksiya"""
+    try:
+        if not order_id:
+            logger.error("check_order_acceptance called with None order_id")
+            return
+            
+        logger.info(f"Waiting {timeout_seconds} seconds to check order {order_id}")
+        
+        # Belirtilen süre kadar bekle
+        await asyncio.sleep(timeout_seconds)
+        
+        # Siparişin güncel durumunu kontrol et
+        order = get_order_details(order_id)
+        
+        if not order:
+            logger.error(f"Order {order_id} not found in check_order_acceptance")
+            return
+            
+        logger.info(f"Checking acceptance for order {order_id}, current status: {order['status']}")
+            
+        # Hala "searching" durumundaysa, siparişi iptal et
+        if order['status'] == "searching":
+            logger.info(f"Order {order_id} is still in 'searching' status, canceling")
+            
+            # Siparişi iptal et
+            update_order_status(order_id, "cancelled")
+            
+            # Müşteriye bildir
+            customer = get_customer_by_id(customer_id)
+            if customer and customer.get('telegram_id'):
+                # Burayı notification_service.py içindeki fonksiyonu kullarak yap
+                from notification_service import notify_customer_no_artisan
+                notification_result = await notify_customer_no_artisan(customer['telegram_id'], order_id)
+                logger.info(f"Customer notification about no artisan result: {notification_result}")
+            else:
+                logger.error(f"Customer {customer_id} not found or telegram_id missing")
+        else:
+            logger.info(f"Order {order_id} status is {order['status']}, no need to cancel")
+            
+    except Exception as e:
+        logger.error(f"Error in check_order_acceptance: {e}", exc_info=True)
+
 async def notify_customer_about_arrival(order_id, status):
     """Müşteriye ustanın varış durumu hakkında bildirim gönderir"""
     try:
@@ -127,7 +171,7 @@ async def notify_customer_about_arrival(order_id, status):
             return False
         
         # Get artisan details
-        artisan = get_artisan_by_id(order['artisan_id'])
+        artisan = wrap_get_dict_function(get_artisan_by_id)(order['artisan_id'])
         if not artisan:
             logger.error(f"Artisan not found for order {order_id}")
             return False
@@ -187,7 +231,7 @@ async def handle_delayed_arrival(order_id):
             return
         
         # Get artisan details
-        artisan = get_artisan_by_id(order['artisan_id'])
+        artisan = wrap_get_dict_function(get_artisan_by_id)(order['artisan_id'])
         if not artisan:
             logger.error(f"Artisan not found for order {order_id}")
             return
@@ -270,7 +314,7 @@ async def block_artisan_for_no_show(order_id):
         
         # Get artisan details
         artisan_id = order['artisan_id']
-        artisan = get_artisan_by_id(artisan_id)
+        artisan = wrap_get_dict_function(get_artisan_by_id)(artisan_id)
         if not artisan:
             logger.error(f"Artisan not found for order {order_id}")
             return False
@@ -347,7 +391,7 @@ async def request_price_from_artisan(order_id):
         
         # Get artisan details
         artisan_id = order['artisan_id']
-        artisan = get_artisan_by_id(artisan_id)
+        artisan = wrap_get_dict_function(get_artisan_by_id)(artisan_id)
         if not artisan:
             logger.error(f"Artisan not found for order {order_id}")
             return False

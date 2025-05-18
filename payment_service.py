@@ -11,7 +11,9 @@ from db import (
 import logging
 import asyncio
 import datetime
-from config import COMMISSION_RATES, ADMIN_CARD_NUMBER, ADMIN_CARD_HOLDER
+from config import COMMISSION_RATES, ADMIN_CARD_NUMBER, ADMIN_CARD_HOLDER, DB_CONFIG
+from crypto_service import encrypt_data, decrypt_data, mask_card_number, mask_name
+from db_encryption_wrapper import wrap_get_dict_function
 
 # Set up logging
 logging.basicConfig(
@@ -30,46 +32,71 @@ async def notify_customer_about_price(order_id, price):
             return False
         
         # Get customer details
-        customer = get_customer_by_id(order['customer_id'])
+        customer = wrap_get_dict_function(get_customer_by_id)(order.get('customer_id'))
         if not customer:
             logger.error(f"Customer not found for order {order_id}")
             return False
         
         customer_telegram_id = customer.get('telegram_id')
         if not customer_telegram_id:
-            logger.error(f"Customer telegram ID not found for order {order_id}")
+            logger.error(f"Customer telegram_id not found for order {order_id}")
             return False
         
-        # Get artisan details
-        artisan = get_artisan_by_id(order['artisan_id'])
-        if not artisan:
-            logger.error(f"Artisan not found for order {order_id}")
-            return False
+        # Get artisan details and decrypt with masking
+        artisan_name = "Usta"  # Default fallback name
+        try:
+            # Get artisan data
+            artisan_encrypted = get_artisan_by_id(order['artisan_id'])
+            
+            if artisan_encrypted:
+                # Try to safely decrypt artisan data
+                from crypto_service import decrypt_data
+                from db_encryption_wrapper import decrypt_dict_data
+                
+                # Decrypt with error handling
+                artisan = decrypt_dict_data(artisan_encrypted, mask=False)  # Mask=False, müşteri ustanın gerçek adını görsün
+                if artisan and 'name' in artisan:
+                    artisan_name = artisan['name']
+                    logger.info(f"Artisan name decrypted in price notification: {artisan_name}")
+            else:
+                logger.warning(f"No artisan found for ID {order['artisan_id']} in price notification")
+        except Exception as e:
+            logger.error(f"Error getting artisan data in price notification: {e}")
+            # Continue with default artisan name
+            
+        # Format price
+        price_text = f"{price:.2f}".rstrip('0').rstrip('.') if isinstance(price, float) else price
         
-        artisan_name = artisan.get('name', 'Usta')
+        # Create message
+        message_text = (
+            f"💰 *Təklif olunan qiymət*\n\n"
+            f"Sifariş #{order_id}\n"
+            f"Usta: {artisan_name}\n"
+            f"Xidmət: {order.get('service')}\n"
+            f"Təklif edilən qiymət: *{price_text} AZN*\n\n"
+            f"Bu qiyməti qəbul edirsinizmi?"
+        )
         
-        # Create confirmation keyboard
+        # Create keyboard
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
             InlineKeyboardButton("✅ Qəbul edirəm", callback_data=f"accept_price_{order_id}"),
             InlineKeyboardButton("❌ Qəbul etmirəm", callback_data=f"reject_price_{order_id}")
         )
         
-        # Send price notification to customer
+        # Send message
         await bot.send_message(
             chat_id=customer_telegram_id,
-            text=f"💰 *Təyin edilmiş qiymət*\n\n"
-                 f"Usta *{artisan_name}* sifariş #{order_id} üçün "
-                 f"*{price} AZN* məbləğində qiymət təyin etdi.\n\n"
-                 f"Bu qiyməti qəbul edirsinizmi?",
+            text=message_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
         
+        logger.info(f"Price notification sent to customer {customer_telegram_id} for order {order_id}")
         return True
         
     except Exception as e:
-        logger.error(f"Error in notify_customer_about_price: {e}")
+        logger.error(f"Error in notify_customer_about_price: {str(e)}", exc_info=True)
         return False
 
 # In payment_service.py - modify notify_customer_about_payment_options
@@ -457,3 +484,131 @@ async def block_artisan_for_nonpayment(order_id, artisan_id, amount, hours):
         
     except Exception as e:
         logger.error(f"Error in block_artisan_for_nonpayment: {e}")
+
+
+def secure_store_card_details(order_id, card_number, card_holder=None):
+    """Store encrypted card details for refund
+    
+    Args:
+        order_id (int): Order ID
+        card_number (str): Card number
+        card_holder (str): Card holder name
+        
+    Returns:
+        bool: Success or failure
+    """
+    try:
+        # Encrypt sensitive data
+        encrypted_card_number = encrypt_data(card_number)
+        encrypted_card_holder = encrypt_data(card_holder) if card_holder else None
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = 'payment_card_details'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()[0] > 0
+        
+        # Create table if it doesn't exist
+        if not table_exists:
+            cursor.execute("""
+                CREATE TABLE payment_card_details (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    order_id INT NOT NULL,
+                    card_number TEXT NOT NULL,
+                    card_holder TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+                )
+            """)
+        
+        # Insert or update card details
+        cursor.execute("""
+            INSERT INTO payment_card_details (order_id, card_number, card_holder, created_at)
+            VALUES (%s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE 
+            card_number = VALUES(card_number),
+            card_holder = VALUES(card_holder),
+            created_at = NOW()
+        """, (order_id, encrypted_card_number, encrypted_card_holder))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error storing card details: {e}", exc_info=True)
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_card_details(order_id, mask=True):
+    """Get card details for a specific order
+    
+    Args:
+        order_id (int): Order ID
+        mask (bool): Whether to mask the card number
+        
+    Returns:
+        dict: Card details or None
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = 'payment_card_details'
+        """, (DB_CONFIG['database'],))
+        
+        table_exists = cursor.fetchone()['count'] > 0
+        
+        if not table_exists:
+            return None
+        
+        # Get card details
+        cursor.execute("""
+            SELECT card_number, card_holder
+            FROM payment_card_details
+            WHERE order_id = %s
+        """, (order_id,))
+        
+        result = cursor.fetchone()
+        
+        if not result:
+            return None
+            
+        # Decrypt and optionally mask card data
+        decrypted_card_number = decrypt_data(result['card_number'])
+        decrypted_card_holder = decrypt_data(result['card_holder']) if result['card_holder'] else None
+        
+        if mask:
+            masked_card_number = mask_card_number(decrypted_card_number)
+            masked_card_holder = mask_name(decrypted_card_holder) if decrypted_card_holder else None
+            
+            return {
+                'card_number': masked_card_number,
+                'card_holder': masked_card_holder
+            }
+        else:
+            return {
+                'card_number': decrypted_card_number,
+                'card_holder': decrypted_card_holder
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting card details: {e}", exc_info=True)
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()

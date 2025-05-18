@@ -7,6 +7,7 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dispatcher import bot, dp
 from db import *
+from db_encryption_wrapper import wrap_get_dict_function
 
 # Set up logging
 logging.basicConfig(
@@ -19,7 +20,7 @@ async def notify_artisan_about_new_order(order_id, artisan_id):
     """Ustaya yeni sipariş hakkında bildirim gönderir"""
     try:
         # Usta bilgilerini doğru almak için düzeltme
-        artisan = get_artisan_by_id(artisan_id)
+        artisan = get_masked_artisan_by_id(artisan_id)
         order = get_order_details(order_id)
         
         if not artisan or not order:
@@ -33,7 +34,7 @@ async def notify_artisan_about_new_order(order_id, artisan_id):
             return False
         
         # Müşteri bilgilerini al
-        customer = get_customer_by_id(order.get('customer_id'))
+        customer = wrap_get_dict_function(get_customer_by_id)(order.get('customer_id'))
         customer_name = customer.get('name', 'Müştəri') if customer else 'Müştəri'
         
         # Sipariş bilgilerini hazırla
@@ -97,57 +98,99 @@ async def notify_customer_about_order_status(order_id, status):
             return False
         
         # Müşteri ve usta bilgilerini al
-        customer = get_customer_by_id(order.get('customer_id'))
+        customer = wrap_get_dict_function(get_customer_by_id)(order.get('customer_id'))
+        
+        # Ustanın bilgilerini alıp şifrelerini manuel olarak çöz
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
         artisan = get_artisan_by_id(order.get('artisan_id'))
+
         
         if not customer or not artisan:
             logger.error(f"Error: Customer or artisan not found for order ID: {order_id}")
             return False
         
-        customer_telegram_id = customer.get('telegram_id')
-        if not customer_telegram_id:
-            logger.error(f"Error: Customer telegram_id not found for customer ID: {order.get('customer_id')}")
+        # Kullanıcının Telegram ID'sini al
+        telegram_id = customer.get('telegram_id')
+        if not telegram_id:
+            logger.error(f"Error: Customer has no Telegram ID. Order ID: {order_id}")
             return False
         
-        # Status mesajını hazırla
-        message_text = ""
-        reply_markup = None
+        artisan_id = order.get('artisan_id')
+
+        # Əvvəlki kod: artisan = get_artisan_by_id(artisan_id)
+        from crypto_service import decrypt_data
         
+        # db.py-dəki get_artisan_by_id funksiyası artıq deşifrə edilmiş versiya qaytarır,
+        # amma bəzən ola bilər ki, deşifrələmə tam işləməsin
+        artisan = get_artisan_by_id(artisan_id)
+        
+        # Əlavə təhlükəsizlik üçün əl ilə də deşifrə edirik
+        artisan_decrypted = decrypt_dict_data(artisan, mask=False)
+        artisan_name = artisan_decrypted.get('name', 'Usta')
+        artisan_phone = artisan_decrypted.get('phone', 'Telefon')
+
+
+        # Əgər məlumatlar hələ də şifrəlidirsə, əl ilə deşifrə etməyə çalışırıq
+        if artisan_name and isinstance(artisan_name, str) and artisan_name.startswith("gAAAAA"):
+            try:
+                artisan_name = decrypt_data(artisan_name)
+            except Exception as e:
+                logger.error(f"Error decrypting artisan name: {e}")
+                
+        if artisan_phone and isinstance(artisan_phone, str) and artisan_phone.startswith("gAAAAA"):
+            try:
+                artisan_phone = decrypt_data(artisan_phone)
+            except Exception as e:
+                logger.error(f"Error decrypting artisan phone: {e}")
+
+
+        # Duruma göre mesajı hazırla
         if status == "accepted":
-            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        
             message_text = (
                 f"✅ *Sifarişiniz qəbul edildi!*\n\n"
-                f"Sifariş #{order_id} *{artisan.get('name')}* tərəfindən qəbul edildi.\n"
-                f"📞 *Usta ilə əlaqə:* {artisan.get('phone')}\n\n"
-                f"Usta sizinlə qısa zamanda əlaqə saxlayacaq."
+                f"Sifariş #{order_id}\n"
+                f"Usta: {artisan_name}\n"
+                f"Əlaqə: {artisan_phone}\n\n"
+                f"Usta sizinlə əlaqə saxlayacaq.\n"
+                f"Sifarişi izləmək üçün *📋 Sifarişlərim* bölməsinə keçin."
             )
-            
-            # Ana menüye dönüş düğmesi
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-            keyboard.add(KeyboardButton("✅ Yeni sifariş ver"))
-            keyboard.add(KeyboardButton("📜 Əvvəlki sifarişlərə bax"))
-            keyboard.add(KeyboardButton("🌍 Yaxınlıqdakı ustaları göstər"))
-            reply_markup = keyboard
-            
-        elif status == "rejected":
+        elif status == "completed":
             message_text = (
-                f"ℹ️ *Sifarişiniz təəssüf ki, usta tərəfindən imtina edildi*\n\n"
-                f"Sifariş #{order_id} üçün yeni bir usta axtarışı aparılır.\n"
-                f"Sizə tezliklə məlumat veriləcək."
+                f"✅ *Sifarişiniz tamamlandı!*\n\n"
+                f"Sifariş #{order_id}\n"
+                f"Xidmət: {order.get('service')}\n"
+                f"Usta: {artisan_name}\n\n"
+                f"Xidmətimizi dəyərləndirmək üçün *📋 Sifarişlərim* bölməsinə keçin."
             )
-            
-        # Müşteriye mesaj gönder
+        elif status == "cancelled":
+            message_text = (
+                f"❌ *Sifarişiniz ləğv edildi*\n\n"
+                f"Sifariş #{order_id}\n"
+                f"Xidmət: {order.get('service')}\n\n"
+                f"Təəssüf ki, sifarişiniz ləğv edildi. Yeni bir sifariş vermək üçün *🔄 Rol seçiminə qayıt* düyməsinə basın."
+            )
+        else:
+            message_text = (
+                f"ℹ️ *Sifariş statusu yeniləndi*\n\n"
+                f"Sifariş #{order_id}\n"
+                f"Xidmət: {order.get('service')}\n"
+                f"Status: {status}\n\n"
+                f"Sifarişi izləmək üçün *📋 Sifarişlərim* bölməsinə keçin."
+            )
+        
+        # Mesajı gönder
         await bot.send_message(
-            chat_id=customer_telegram_id,
+            chat_id=telegram_id,
             text=message_text,
-            reply_markup=reply_markup,
             parse_mode="Markdown"
         )
         
         return True
-    
+        
     except Exception as e:
-        logger.error(f"Error in notify_customer_about_order_status: {e}")
+        logger.error(f"Error in notify_customer_about_order_status: {str(e)}")
         return False
 
 async def notify_customer_no_artisan(customer_telegram_id, order_id):
@@ -213,9 +256,23 @@ async def notify_artisan_about_price_acceptance(order_id):
             logger.error(f"Artisan not found or telegram_id missing for order {order_id}")
             return False
         
-        # Get customer details for the message
-        customer = get_customer_by_id(order['customer_id'])
-        customer_name = customer.get('name', 'Müştəri') if customer else 'Müştəri'
+        # Get customer details for the message in a safe way
+        customer_name = "Müştəri"  # Default fallback name
+        try:
+            customer = get_customer_by_id(order['customer_id'])
+            if customer:
+                # Try to get and decrypt customer name
+                from crypto_service import decrypt_data
+                encrypted_name = customer.get('name')
+                if encrypted_name:
+                    decrypted_name = decrypt_data(encrypted_name)
+                    if decrypted_name and decrypted_name != encrypted_name:
+                        customer_name = decrypted_name
+                    else:
+                        logger.warning(f"Could not decrypt customer name for order {order_id}")
+        except Exception as e:
+            logger.error(f"Error getting customer name for price acceptance: {e}")
+            # Continue with default name
         
         # Send notification
         await bot.send_message(
@@ -251,7 +308,7 @@ async def notify_customer_about_invalid_receipt(order_id):
             return False
         
         # Get customer details
-        customer = get_customer_by_id(order.get('customer_id'))
+        customer = wrap_get_dict_function(get_customer_by_id)(order.get('customer_id'))
         if not customer:
             logger.error(f"Customer not found for order {order_id}")
             return False
@@ -392,52 +449,48 @@ async def send_review_request_to_customer(order_id):
             return False
         
         # Get customer and artisan information
-        customer = get_customer_by_id(order.get('customer_id'))
+        customer = wrap_get_dict_function(get_customer_by_id)(order.get('customer_id'))
+        
+        # Ustanın bilgilerini alıp şifrelerini manuel olarak çöz ve maskele
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
         artisan = get_artisan_by_id(order.get('artisan_id'))
         
         if not customer or not artisan:
             logger.error(f"Customer or artisan not found for order {order_id}")
             return False
-            
+        
+        # Get customer telegram ID
         telegram_id = customer.get('telegram_id')
         if not telegram_id:
-            logger.error(f"Customer telegram ID not found for order {order_id}")
+            logger.error(f"Customer has no telegram ID for review request, order {order_id}")
             return False
         
-        # Create keyboard with rating options
+        # Create review keyboard
         keyboard = InlineKeyboardMarkup(row_width=5)
-        rating_buttons = []
-        for i in range(1, 6):  # 1 to 5 stars
-            stars = "⭐" * i
-            rating_buttons.append(InlineKeyboardButton(
-                stars, callback_data=f"rate_{order_id}_{i}"
-            ))
-
-        keyboard.row(*rating_buttons[:3])  # First row with 1-3 stars
-        keyboard.row(*rating_buttons[3:])  # Second row with 4-5 stars
-        
-        # Add skip button
-        keyboard.add(InlineKeyboardButton(
-            "⏭️ Keçin", callback_data=f"skip_rating_{order_id}"
-        ))
+        for i in range(1, 6):
+            keyboard.insert(InlineKeyboardButton(f"{i}⭐", callback_data=f"review_{order_id}_{i}"))
         
         # Send review request
+        message_text = (
+            f"⭐ *Xidməti qiymətləndirin*\n\n"
+            f"Sifariş #{order_id} uğurla tamamlandı!\n"
+            f"Usta: {artisan['name']}\n"
+            f"Xidmət: {order.get('service')}\n\n"
+            f"Zəhmət olmasa, ustanın xidmətini qiymətləndirərək başqalarına da kömək edin."
+        )
+        
         await bot.send_message(
             chat_id=telegram_id,
-            text=f"✅ *Sifarişiniz tamamlandı!*\n\n"
-                 f"*{artisan.get('name')}* tərəfindən göstərilən xidməti qiymətləndirməyinizi xahiş edirik.\n\n"
-                 f"*Sifariş:* #{order_id}\n"
-                 f"*Xidmət:* {order.get('service')}\n\n"
-                 f"Zəhmət olmasa, 1-dən 5-ə qədər ulduz seçin:",
+            text=message_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
         
-        logger.info(f"Review request sent to customer for order {order_id}")
         return True
         
     except Exception as e:
-        logger.error(f"Error in send_review_request_to_customer: {e}", exc_info=True)
+        logger.error(f"Error in send_review_request_to_customer: {str(e)}")
         return False
     
 # notification_service.py içine bu fonksiyonu ekleyelim

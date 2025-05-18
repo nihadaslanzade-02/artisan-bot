@@ -6,6 +6,7 @@ A Telegram bot for connecting customers with artisans/service providers.
 This bot allows customers to find and book artisans for various services,
 and helps artisans manage their service offerings and customer orders.
 """
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -291,10 +292,13 @@ async def show_admin_receipts(message):
     """Show payment receipts for admin to verify"""
     try:
         # Get unverified and pending receipts
-        from db import execute_query
+        from db import execute_query, get_artisan_by_id, get_customer_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
+        
         query = """
-            SELECT o.id, o.service, o.price, o.payment_method, c.name as customer_name, 
-                a.name as artisan_name, op.receipt_file_id, op.receipt_verified,
+            SELECT o.id, o.service, o.price, o.payment_method, c.id as customer_id, 
+                a.id as artisan_id, op.receipt_file_id, op.receipt_verified,
                 op.receipt_uploaded_at, op.payment_method as op_payment_method,
                 (SELECT COUNT(*) FROM receipt_verification_history 
                  WHERE order_id = o.id) as attempt_count
@@ -319,6 +323,14 @@ async def show_admin_receipts(message):
         # Send each receipt with its details and verification buttons
         for receipt in receipts:
             order_id = receipt['id']
+            
+            # Şifreleri çözülmüş müşteri ve usta bilgilerini al
+            customer_encrypted = get_customer_by_id(receipt['customer_id'])
+            artisan_encrypted = get_artisan_by_id(receipt['artisan_id'])
+            
+            # Şifreleri çöz ve maskele
+            customer = decrypt_dict_data(customer_encrypted, mask=True)
+            artisan = get_masked_artisan_by_id(receipt['artisan_id'])
             
             # Get verification status
             status_text = ""
@@ -353,8 +365,8 @@ async def show_admin_receipts(message):
             # Create caption with order details
             caption = (
                 f"🧾 *Sifariş #{order_id}*\n"
-                f"👤 Müştəri: {receipt['customer_name']}\n"
-                f"👷‍♂️ Usta: {receipt['artisan_name']}\n"
+                f"👤 Müştəri: {customer['name']}\n"
+                f"👷‍♂️ Usta: {artisan['name']}\n"
                 f"🛠 Xidmət: {receipt['service']}\n"
                 f"💰 Məbləğ: {receipt['price']} AZN\n"
                 f"💳 {payment_info}\n"
@@ -452,10 +464,13 @@ async def show_admin_orders(message):
     """Show orders for admin to manage"""
     try:
         # Get recent orders
-        from db import execute_query
+        from db import execute_query, get_artisan_by_id, get_customer_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
+        
         query = """
             SELECT o.id, o.service, o.price, o.status, o.created_at, 
-                   c.name as customer_name, a.name as artisan_name
+                   c.id as customer_id, a.id as artisan_id
             FROM orders o
             JOIN customers c ON o.customer_id = c.id
             JOIN artisans a ON o.artisan_id = a.id
@@ -487,6 +502,14 @@ async def show_admin_orders(message):
         
         # Display recent orders
         for order in orders:
+            # Şifreleri çözülmüş müşteri ve usta bilgilerini al
+            customer_encrypted = get_customer_by_id(order['customer_id'])
+            artisan_encrypted = get_artisan_by_id(order['artisan_id'])
+            
+            # Şifreleri çöz ve maskele
+            customer = decrypt_dict_data(customer_encrypted, mask=True)
+            artisan = get_masked_artisan_by_id(order['artisan_id'])
+            
             # Format date
             created_at = order['created_at']
             if isinstance(created_at, str):
@@ -511,8 +534,8 @@ async def show_admin_orders(message):
             order_text = (
                 f"🔹 *Sifariş #{order['id']}*\n"
                 f"📅 Tarix: {formatted_date}\n"
-                f"👤 Müştəri: {order['customer_name']}\n"
-                f"👷‍♂️ Usta: {order['artisan_name']}\n"
+                f"👤 Müştəri: {customer['name']}\n"
+                f"👷‍♂️ Usta: {artisan['name']}\n"
                 f"🛠 Xidmət: {order['service']}\n"
                 f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
                 f"🔄 Status: {status_text}"
@@ -717,12 +740,14 @@ async def user_actions_handler(callback_query: types.CallbackQuery):
 async def filter_orders(message, filter_type):
     """Show filtered orders based on type"""
     try:
-        from db import execute_query
+        from db import execute_query, get_artisan_by_id, get_customer_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
         
         # Build query based on filter type
         query = """
             SELECT o.id, o.service, o.price, o.status, o.created_at, 
-                   c.name as customer_name, a.name as artisan_name
+                   c.id as customer_id, a.id as artisan_id
             FROM orders o
             JOIN customers c ON o.customer_id = c.id
             JOIN artisans a ON o.artisan_id = a.id
@@ -755,6 +780,14 @@ async def filter_orders(message, filter_type):
         
         # Display filtered orders
         for order in orders:
+            # Şifreleri çözülmüş müşteri ve usta bilgilerini al
+            customer_encrypted = get_customer_by_id(order['customer_id'])
+            artisan_encrypted = get_artisan_by_id(order['artisan_id'])
+            
+            # Şifreleri çöz ve maskele
+            customer = decrypt_dict_data(customer_encrypted, mask=True)
+            artisan = get_masked_artisan_by_id(order['artisan_id'])
+            
             # Format date
             created_at = order['created_at']
             if isinstance(created_at, str):
@@ -779,8 +812,8 @@ async def filter_orders(message, filter_type):
             order_text = (
                 f"🔹 *Sifariş #{order['id']}*\n"
                 f"📅 Tarix: {formatted_date}\n"
-                f"👤 Müştəri: {order['customer_name']}\n"
-                f"👷‍♂️ Usta: {order['artisan_name']}\n"
+                f"👤 Müştəri: {customer['name']}\n"
+                f"👷‍♂️ Usta: {artisan['name']}\n"
                 f"🛠 Xidmət: {order['service']}\n"
                 f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
                 f"🔄 Status: {status_text}"
@@ -806,13 +839,27 @@ async def filter_orders(message, filter_type):
 async def show_order_details(message, order_id):
     """Show detailed information about an order"""
     try:
-        # Get comprehensive order details
-        from db import get_order_details
-        order = get_order_details(order_id)
+        # Get comprehensive order details - gerçek veriler için düzeltme
+        from db import get_order_details, get_customer_by_id, get_artisan_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
         
-        if not order:
+        order_encrypted = get_order_details(order_id)
+        
+        if not order_encrypted:
             await message.answer(f"❌ Sifariş #{order_id} tapılmadı.")
             return
+        
+        # Müşteri ve usta bilgilerini al ve şifrelerini çöz
+        customer_encrypted = get_customer_by_id(order_encrypted.get('customer_id'))
+        artisan_encrypted = get_artisan_by_id(order_encrypted.get('artisan_id'))
+        
+        # Şifreleri çöz ve maskele
+        customer = decrypt_dict_data(customer_encrypted, mask=True)
+        artisan = get_masked_artisan_by_id(order_encrypted.get('artisan_id'))
+        
+        # Sipariş verisinin şifresini çöz ve maskele
+        order = decrypt_dict_data(order_encrypted, mask=True)
         
         # Format date
         date_time = order.get('date_time')
@@ -847,15 +894,15 @@ async def show_order_details(message, order_id):
         else:
             payment_text = payment_status
         
-        # Create detailed order text
+        # Create detailed order text with real data
         details_text = (
             f"📋 *Sifariş #{order_id} Detalları*\n\n"
             f"📅 *Tarix və saat:* {formatted_date}\n"
             f"🔄 *Status:* {status_text}\n\n"
-            f"👤 *Müştəri:* {order.get('customer_name')}\n"
-            f"📞 *Müştəri telefonu:* {order.get('customer_phone')}\n\n"
-            f"👷‍♂️ *Usta:* {order.get('artisan_name')}\n"
-            f"📞 *Usta telefonu:* {order.get('artisan_phone')}\n\n"
+            f"👤 *Müştəri:* {customer.get('name')}\n"
+            f"📞 *Müştəri telefonu:* {customer.get('phone')}\n\n"
+            f"👷‍♂️ *Usta:* {artisan.get('name')}\n"
+            f"📞 *Usta telefonu:* {artisan.get('phone')}\n\n"
             f"🛠 *Xidmət:* {order.get('service')}\n"
             f"🔍 *Alt xidmət:* {order.get('subservice', 'Yoxdur')}\n"
             f"📝 *Qeyd:* {order.get('note', 'Yoxdur')}\n\n"
@@ -1117,6 +1164,12 @@ async def show_customers_list(message):
         
         # Send each customer as a separate message with options
         for customer in customers:
+            # Həssas məlumatları maskalanmış şəkildə al
+            from db_encryption_wrapper import wrap_get_dict_function
+            from db import get_customer_by_id
+            
+            masked_customer = wrap_get_dict_function(get_customer_by_id, mask=True)(customer['id'])
+            
             # Format date
             created_at = customer['created_at']
             if isinstance(created_at, str):
@@ -1127,13 +1180,19 @@ async def show_customers_list(message):
             # Format status
             status_emoji = "🟢" if customer.get('active', True) else "🔴"
             status_text = "Aktiv" if customer.get('active', True) else "Bloklanıb"
-            
-            # Create customer text
+            # Markdown özel karakterleri kaçışla (escape)
+            masked_name = masked_customer['name'].replace('*', '\\*')
+            masked_phone = masked_customer['phone'].replace('*', '\\*')
+            city = customer.get('city', 'Təyin edilməyib')
+            if city and isinstance(city, str):
+                city = city.replace('*', '\\*')
+
+            # Create customer text with masked data
             customer_text = (
                 f"👤 *Müştəri #{customer['id']}*\n"
-                f"Ad: {customer['name']}\n"
-                f"Telefon: {customer['phone']}\n"
-                f"Şəhər: {customer.get('city', 'Təyin edilməyib')}\n"
+                f"Ad: {masked_name}\n"
+                f"Telefon: {masked_phone}\n"
+                f"Şəhər: {city}\n"
                 f"Qeydiyyat tarixi: {formatted_date}\n"
                 f"Status: {status_emoji} {status_text}"
             )
@@ -1198,6 +1257,12 @@ async def show_artisans_list(message):
         
         # Send each artisan as a separate message with options
         for artisan in artisans:
+            # Həssas məlumatları maskalanmış şəkildə al
+            from db_encryption_wrapper import wrap_get_dict_function
+            from db import get_artisan_by_id
+            
+            masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=True)(artisan['id'])
+            
             # Format date
             created_at = artisan['created_at']
             if isinstance(created_at, str):
@@ -1218,13 +1283,19 @@ async def show_artisans_list(message):
                 rating_text = "Qiymətləndirilməyib"
                 rating_stars = ""
             
-            # Create artisan text
+            # Önce değişkenleri hazırlayalım
+            masked_name = masked_artisan['name'].replace('*', '\\*')
+            masked_phone = masked_artisan['phone'].replace('*', '\\*')
+            masked_city = artisan.get('city', 'Təyin edilməyib').replace('*', '\\*')
+            masked_service = artisan['service'].replace('*', '\\*')
+            
+            # Sonra f-string içinde kullanalım
             artisan_text = (
                 f"👷‍♂️ *Usta #{artisan['id']}*\n"
-                f"Ad: {artisan['name']}\n"
-                f"Telefon: {artisan['phone']}\n"
-                f"Şəhər: {artisan.get('city', 'Təyin edilməyib')}\n"
-                f"Xidmət: {artisan['service']}\n"
+                f"Ad: {masked_name}\n"
+                f"Telefon: {masked_phone}\n"
+                f"Şəhər: {masked_city}\n"
+                f"Xidmət: {masked_service}\n"
                 f"Reytinq: {rating_text} {rating_stars}\n"
                 f"Qeydiyyat tarixi: {formatted_date}\n"
                 f"Status: {status_emoji} {status_text}"
@@ -1912,30 +1983,45 @@ async def user_orders_actions(callback_query: types.CallbackQuery):
 async def show_customer_orders(message, customer_id):
     """Show orders for a specific customer"""
     try:
-        from db import get_customer_by_id, get_customer_orders
+        from db import get_customer_by_id, get_customer_orders, get_artisan_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
         
         # Get customer info
-        customer = get_customer_by_id(customer_id)
+        customer_encrypted = get_customer_by_id(customer_id)
         
-        if not customer:
+        if not customer_encrypted:
             await message.answer(f"❌ Müştəri #{customer_id} tapılmadı.")
             return
         
-        # Get customer orders
-        orders = get_customer_orders(customer_id)
+        # Şifreleri çöz ve maskele
+        customer = decrypt_dict_data(customer_encrypted, mask=True)
         
-        if not orders:
+        # Get customer orders
+        orders_encrypted = get_customer_orders(customer_id)
+        
+        if not orders_encrypted:
             await message.answer(f"📭 Müştəri #{customer_id} ({customer['name']}) üçün hələ heç bir sifariş yoxdur.")
             return
         
         await message.answer(
             f"📋 *Müştəri #{customer_id} ({customer['name']}) sifarişləri*\n\n"
-            f"Tapılmış sifarişlər: {len(orders)}",
+            f"Tapılmış sifarişlər: {len(orders_encrypted)}",
             parse_mode="Markdown"
         )
         
         # Display each order
-        for order in orders:
+        for order_encrypted in orders_encrypted:
+            # Siparişin şifresini çöz
+            order = decrypt_dict_data(order_encrypted, mask=False)
+            
+            # Usta bilgilerini al ve şifresini çöz
+            if order.get('artisan_id'):
+                artisan = get_artisan_by_id(order.get('artisan_id'))
+                artisan_name = artisan.get('name', 'Təyin edilməyib') if artisan else 'Təyin edilməyib'
+            else:
+                artisan_name = 'Təyin edilməyib'
+            
             # Format date
             date_time = order.get('date_time')
             if isinstance(date_time, str):
@@ -1960,7 +2046,7 @@ async def show_customer_orders(message, customer_id):
             order_text = (
                 f"🔹 *Sifariş #{order.get('id')}*\n"
                 f"📅 Tarix: {formatted_date}\n"
-                f"👷‍♂️ Usta: {order.get('artisan_name', 'Təyin edilməyib')}\n"
+                f"👷‍♂️ Usta: {artisan_name}\n"
                 f"🛠 Xidmət: {order.get('service', 'Təyin edilməyib')}\n"
                 f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
                 f"🔄 Status: {status_text}\n"
@@ -1986,18 +2072,23 @@ async def show_customer_orders(message, customer_id):
 async def show_artisan_orders(message, artisan_id):
     """Show orders for a specific artisan"""
     try:
-        from db import get_artisan_by_id, execute_query
+        from db import get_artisan_by_id, execute_query, get_customer_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
         
         # Get artisan info
-        artisan = get_artisan_by_id(artisan_id)
+        artisan_encrypted = get_artisan_by_id(artisan_id)
         
-        if not artisan:
+        if not artisan_encrypted:
             await message.answer(f"❌ Usta #{artisan_id} tapılmadı.")
             return
         
+        # Şifreleri çöz ve maskele
+        artisan = get_masked_artisan_by_id(order['artisan_id'])
+        
         # Get artisan orders
         query = """
-            SELECT o.*, c.name as customer_name
+            SELECT o.*, c.id as customer_id
             FROM orders o
             JOIN customers c ON o.customer_id = c.id
             WHERE o.artisan_id = %s
@@ -2018,6 +2109,11 @@ async def show_artisan_orders(message, artisan_id):
         
         # Display each order
         for order in orders:
+            # Müşteri bilgilerini al ve şifresini çöz
+            customer_encrypted = get_customer_by_id(order.get('customer_id'))
+            customer = decrypt_dict_data(customer_encrypted, mask=False) if customer_encrypted else None
+            customer_name = customer.get('name', 'Təyin edilməyib') if customer else 'Təyin edilməyib'
+            
             # Format date
             date_time = order.get('date_time')
             if isinstance(date_time, str):
@@ -2042,7 +2138,7 @@ async def show_artisan_orders(message, artisan_id):
             order_text = (
                 f"🔹 *Sifariş #{order.get('id')}*\n"
                 f"📅 Tarix: {formatted_date}\n"
-                f"👤 Müştəri: {order.get('customer_name', 'Təyin edilməyib')}\n"
+                f"👤 Müştəri: {customer_name}\n"
                 f"🛠 Xidmət: {order.get('service', 'Təyin edilməyib')}\n"
                 f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
                 f"🔄 Status: {status_text}\n"

@@ -6,4 +6,4 @@ class ArtisanRegistration(StatesGroup):
     waiting_for_name = State()
     waiting_for_phone = State()
     waiting_for_service = State()
-    waiting_for_location = State()
+    waiting_for_location = State() 

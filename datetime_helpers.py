@@ -29,7 +29,7 @@ AZ_DAY_NAMES = {
     6: "Bazar"
 }
 
-def get_date_keyboard(days_ahead: int = 2) -> InlineKeyboardMarkup:
+def get_date_keyboard(days_ahead: int = 3) -> InlineKeyboardMarkup:
     """
     Create a keyboard with date options for the next N days.
     
@@ -63,7 +63,7 @@ def get_date_keyboard(days_ahead: int = 2) -> InlineKeyboardMarkup:
 
 def get_time_keyboard(
     start_hour: int = 8, 
-    end_hour: int = 21,
+    end_hour: int = 24,
     interval_mins: int = 10  
 ) -> InlineKeyboardMarkup:
     """
@@ -82,11 +82,11 @@ def get_time_keyboard(
     
     # Default değerleri config değerleriyle değiştir
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 8 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 21 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 24 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
     if end_hour == 24:
-        end_hour = 21
+        end_hour = 24
         include_midnight = True
     else:
         include_midnight = False
@@ -144,7 +144,7 @@ def get_available_time_slots(
     date_str: str, 
     booked_slots: List[str],
     start_hour: int = 8,
-    end_hour: int = 21, 
+    end_hour: int = 24, 
     interval_mins: int = 10  
 ) -> List[str]:
     """
@@ -165,11 +165,11 @@ def get_available_time_slots(
     
     # Default değerleri config değerleriyle değiştir
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 8 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 21 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 24 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
     if end_hour == 24:
-        end_hour = 21
+        end_hour = 24
         include_midnight = True
     else:
         include_midnight = False
@@ -199,7 +199,7 @@ def get_time_slots_keyboard(
     date_str: str, 
     booked_slots: List[str] = None,
     start_hour: int = 8,
-    end_hour: int = 21, 
+    end_hour: int = 24, 
     interval_mins: int = 10
 ) -> InlineKeyboardMarkup:
     """Create a keyboard with available time slots for a specific date."""
@@ -213,11 +213,11 @@ def get_time_slots_keyboard(
     
     # Set default values with config values
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 8 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 21 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 24 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
     if end_hour == 24:
-        end_hour = 21
+        end_hour = 24
         include_midnight = True
     else:
         include_midnight = False
@@ -236,7 +236,7 @@ def get_time_slots_keyboard(
         current_minute = current_time.minute
         
         # Add buffer (e.g., 30 minutes)
-        buffer_minutes = 1
+        buffer_minutes = 30
         
         # Calculate start time with buffer
         buffer_time = current_time + datetime.timedelta(minutes=buffer_minutes)
