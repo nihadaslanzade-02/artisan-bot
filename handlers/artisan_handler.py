@@ -2614,7 +2614,7 @@ def register_handlers(dp):
                     callback_data=f"set_price_range_{subservice}"
                 ))
             
-            keyboard.add(InlineKeyboardButton("🔙 Geri", callback_data="back_to_menu"))
+            keyboard.add(InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu"))
             
             await callback_query.message.answer(
                 "💰 *Qiymət aralığını təyin etmək istədiyiniz xidməti seçin:*\n\n"
