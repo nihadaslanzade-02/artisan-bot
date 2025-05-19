@@ -153,16 +153,14 @@ async def notify_customer_about_order_status(order_id, status):
                 f"Sifariş #{order_id}\n"
                 f"Usta: {artisan_name}\n"
                 f"Əlaqə: {artisan_phone}\n\n"
-                f"Usta sizinlə əlaqə saxlayacaq.\n"
-                f"Sifarişi izləmək üçün *📋 Sifarişlərim* bölməsinə keçin."
+                f"Usta sizinlə əlaqə saxlayacaq."
             )
         elif status == "completed":
             message_text = (
                 f"✅ *Sifarişiniz tamamlandı!*\n\n"
                 f"Sifariş #{order_id}\n"
                 f"Xidmət: {order.get('service')}\n"
-                f"Usta: {artisan_name}\n\n"
-                f"Xidmətimizi dəyərləndirmək üçün *📋 Sifarişlərim* bölməsinə keçin."
+                f"Usta: {artisan_name}"
             )
         elif status == "cancelled":
             message_text = (
@@ -176,8 +174,7 @@ async def notify_customer_about_order_status(order_id, status):
                 f"ℹ️ *Sifariş statusu yeniləndi*\n\n"
                 f"Sifariş #{order_id}\n"
                 f"Xidmət: {order.get('service')}\n"
-                f"Status: {status}\n\n"
-                f"Sifarişi izləmək üçün *📋 Sifarişlərim* bölməsinə keçin."
+                f"Status: {status}"
             )
         
         # Mesajı gönder
@@ -702,4 +699,68 @@ async def notify_artisan_commission_receipt_received(artisan_id, order_id):
         return True
     except Exception as e:
         logger.error(f"Error in notify_artisan_commission_receipt_received: {e}")
+        return False
+
+async def cancel_order_notifications_for_other_artisans(order_id, accepted_artisan_id):
+    """
+    Cancels order notifications for all artisans except the one who accepted the order
+    
+    Args:
+        order_id (int): ID of the order
+        accepted_artisan_id (int): ID of the artisan who accepted the order
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get all artisans who might have received the notification
+        from db import get_connection, execute_query
+        from geo_helpers import calculate_distance
+        
+        # Get order details
+        order = get_order_details(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for notification cancellation")
+            return False
+        
+        # Get artisans who may have received the notification
+        query = """
+            SELECT id, telegram_id 
+            FROM artisans 
+            WHERE active = TRUE 
+            AND service = %s 
+            AND id != %s
+        """
+        
+        artisans = execute_query(query, (order['service'], accepted_artisan_id), fetchall=True)
+        
+        if not artisans:
+            logger.info(f"No other artisans to cancel notifications for order {order_id}")
+            return True
+            
+        cancellation_count = 0
+        
+        # Send cancellation message to all other artisans
+        for artisan in artisans:
+            artisan_id = artisan[0]
+            artisan_telegram_id = artisan[1]
+            
+            if artisan_telegram_id:
+                try:
+                    # Try to edit any existing messages for this order
+                    await bot.send_message(
+                        chat_id=artisan_telegram_id,
+                        text=f"ℹ️ *Sifariş artıq mövcud deyil*\n\n"
+                             f"Sifariş #{order_id} başqa bir usta tərəfindən götürülüb.",
+                        parse_mode="Markdown"
+                    )
+                    cancellation_count += 1
+                except Exception as e:
+                    logger.error(f"Error cancelling notification for artisan {artisan_id}: {e}")
+        
+        logger.info(f"Cancelled order notifications for {cancellation_count} artisans for order {order_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error in cancel_order_notifications_for_other_artisans: {e}", exc_info=True)
         return False

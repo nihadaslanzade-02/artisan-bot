@@ -2462,7 +2462,30 @@ def register_handlers(dp):
             # Xəta olduğu halda da usta menusuna qayıdaq
             await show_artisan_menu(callback_query.message)
 
-
+    async def show_customer_menu(message: types.Message):
+        """Show the main customer menu"""
+        try:
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            keyboard.add(KeyboardButton("✅ Yeni sifariş ver"))
+            keyboard.add(KeyboardButton("📜 Əvvəlki sifarişlərə bax"))
+            keyboard.add(KeyboardButton("🌍 Yaxınlıqdakı ustaları göstər"))
+            keyboard.add(KeyboardButton("👤 Profilim"), KeyboardButton("🔍 Xidmətlər"))
+            keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
+            keyboard.add(KeyboardButton("🏠 Əsas menyuya qayıt"))
+            
+            await message.answer(
+                "👤 *Müştəri menyusu*\n\n"
+                "Aşağıdakı əməliyyatlardan birini seçin:",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in show_customer_menu: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await show_role_selection(message)
 
     # Handler for "Price Settings" button
     @dp.message_handler(lambda message: message.text == "💰 Qiymət ayarları")
@@ -4132,6 +4155,9 @@ def register_handlers(dp):
             notification_result = await notify_customer_about_order_status(order_id, "accepted")
             logger.info(f"Customer notification result: {notification_result}")
             
+            # Cancel order notifications for other artisans
+            from notification_service import cancel_order_notifications_for_other_artisans
+            await cancel_order_notifications_for_other_artisans(order_id, artisan_id)
 
             # YENİ KOD: Varış seçeneklerini ekle
             arrival_keyboard = InlineKeyboardMarkup(row_width=2)
@@ -4458,93 +4484,52 @@ def register_handlers(dp):
             # Extract order ID from callback data
             order_id = int(callback_query.data.split('_')[-1])
             
-            # Get order details
-            order = get_order_details(order_id)
-            
-            if not order:
-                await callback_query.message.answer(
-                    "❌ Sifariş tapılmadı. Silinmiş və ya ləğv edilmiş ola bilər."
-                )
-                await callback_query.answer()
-                return
-            
-            # Get artisan ID
-            telegram_id = callback_query.from_user.id
-            artisan_id = get_artisan_by_telegram_id(telegram_id)
-            
-            if not artisan_id:
-                await callback_query.message.answer(
-                    "❌ Siz hələ usta kimi qeydiyyatdan keçməmisiniz."
-                )
-                await callback_query.answer()
-                return
-            
-            # Check if the order is assigned to this artisan
-            if order['artisan_id'] != artisan_id:
-                await callback_query.message.answer(
-                    "❌ Bu sifariş sizə təyin edilməyib."
-                )
-                await callback_query.answer()
-                return
-            
-            # Ləğv səbəbini təyin et
-            cancel_reason = "Usta tərəfindən ləğv edildi (çata bilmədi)"
-            
-            # Update order status before trying to find new artisan
-            update_order_status(order_id, "pending")
-            
-            # Ustaya bildir
+            # Sipariş mesajını güncelle
             await callback_query.message.edit_text(
-                callback_query.message.text + "\n\n❌ Bu sifarişə getməkdən imtina etdiniz",
+                callback_query.message.text + "\n\n❌ Bu sifarişə gedə bilmədiyiniz üçün sifariş ləğv edildi.",
                 parse_mode="Markdown"
             )
+            order = get_order_details(order_id)
+            if not order:
+                logger.error(f"Error: Order not found. Order ID: {order_id}")
+                return False
+            artisan_id = order.get('artisan_id')
+
+            # Əvvəlki kod: artisan = get_artisan_by_id(artisan_id)
+            from crypto_service import decrypt_data
+            from db_encryption_wrapper import decrypt_dict_data
             
-            # Try to find and assign a new artisan
-            new_artisan_found = await find_and_assign_new_artisan(order_id)
+            # db.py-dəki get_artisan_by_id funksiyası artıq deşifrə edilmiş versiya qaytarır,
+            # amma bəzən ola bilər ki, deşifrələmə tam işləməsin
+            artisan = get_artisan_by_id(artisan_id)
             
-            # Müştəriyə bildir
-            customer = get_customer_by_id(order['customer_id'])
-            if customer and customer.get('telegram_id'):
-                if new_artisan_found:
-                    await bot.send_message(
-                        chat_id=customer['telegram_id'],
-                        text=f"ℹ️ *Usta dəyişikliyi*\n\n"
-                            f"Təyin edilmiş usta sifarişinizə gələ bilməyəcəyini bildirdi.\n"
-                            f"Sizin üçün yeni bir usta tapıldı. Zəhmət olmasa, gözləyin.",
-                        parse_mode="Markdown"
-                    )
-                else:
-                    # If no new artisan found, update order status to cancelled and notify customer
-                    update_order_status(order_id, "cancelled")
-                    await bot.send_message(
-                        chat_id=customer['telegram_id'],
-                        text=f"ℹ️ *Sifariş ləğv edildi*\n\n"
-                            f"Təəssüf ki, usta sifarişinizə gələ bilməyəcəyini bildirdi və yaxınlıqda başqa uyğun usta tapılmadı.\n"
-                            f"Zəhmət olmasa, yeni bir sifariş verin və ya daha sonra yenidən cəhd edin.",
-                        parse_mode="Markdown"
-                    )
-                    
-                    # Müştəri menyusunu göstər
-                    # Fake message object to use with show_customer_menu
-                    fake_message = types.Message.to_object({'message_id': 0, 'date': 0, 
-                                                        'chat': {'id': customer['telegram_id'], 'type': 'private'}, 
-                                                        'from': {'id': customer['telegram_id']}, 
-                                                        'content_type': 'text', 'text': ''})
-                    await show_customer_menu(fake_message)
-            
-            # Notify the artisan about the outcome
-            if new_artisan_found:
-                await callback_query.answer("Sifariş başqa bir ustaya göndərildi")
-            else:
-                await callback_query.answer("Sifariş ləğv edildi, yaxınlıqda başqa uyğun usta tapılmadı")
-                
+            # Əlavə təhlükəsizlik üçün əl ilə də deşifrə edirik
+            artisan_decrypted = decrypt_dict_data(artisan, mask=False)
+            artisan_name = artisan_decrypted.get('name', 'Usta')
+            artisan_phone = artisan_decrypted.get('phone', 'Telefon')
+            # Müşteri ve usta bilgilerini al
+            customer = wrap_get_dict_function(get_customer_by_id)(order.get('customer_id'))
+            # Sipariş durumunu "searching" yap
+            status_updated = update_order_status(order_id, "searching") 
+            logger.info(f"Order status update result: {status_updated}")
+            telegram_id = customer.get('telegram_id')
+            if not telegram_id:
+                logger.error(f"Error: Customer has no Telegram ID. Order ID: {order_id}")
+                return False
+            message_text = (
+                f"❌ *{artisan_name} adlı usta sifarişinizə gələ bilməyəcəyini qeyd etdi. Sizin üçün başqa usta axtarılır.*"
+            )
+            # Mesajı gönder
+            await bot.send_message(
+                chat_id=telegram_id,
+                text=message_text,
+                parse_mode="Markdown"
+            )
+            await callback_query.answer("Sipariş reddedildi")
             
         except Exception as e:
-            logger.error(f"Error in artisan_cannot_arrive: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await callback_query.answer()
+            logger.error(f"Error in artisan_cannot_arrive: {e}", exc_info=True)
+            await callback_query.answer("❌ İşlem sırasında hata oluştu", show_alert=True)
 
 
     @dp.callback_query_handler(lambda c: c.data.startswith('artisan_confirm_cash_'))

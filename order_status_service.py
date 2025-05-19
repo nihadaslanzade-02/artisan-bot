@@ -2,7 +2,7 @@
 
 import asyncio
 import datetime
-from aiogram import Bot
+from aiogram import Bot, types
 from aiogram.types import *
 from dispatcher import bot, dp
 from db import (
@@ -19,6 +19,33 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+
+async def show_customer_menu(message: types.Message):
+        """Show the main customer menu"""
+        try:
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            keyboard.add(KeyboardButton("✅ Yeni sifariş ver"))
+            keyboard.add(KeyboardButton("📜 Əvvəlki sifarişlərə bax"))
+            keyboard.add(KeyboardButton("🌍 Yaxınlıqdakı ustaları göstər"))
+            keyboard.add(KeyboardButton("👤 Profilim"), KeyboardButton("🔍 Xidmətlər"))
+            keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
+            keyboard.add(KeyboardButton("🏠 Əsas menyuya qayıt"))
+            
+            await message.answer(
+                "👤 *Müştəri menyusu*\n\n"
+                "Aşağıdakı əməliyyatlardan birini seçin:",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in show_customer_menu: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await show_role_selection(message)
 
 async def schedule_arrival_check(order_id, artisan_id, scheduled_time):
     """Belirli bir sipariş için varış kontrolü planlar"""
@@ -138,10 +165,26 @@ async def check_order_acceptance(order_id, customer_id, timeout_seconds):
             # Müşteriye bildir
             customer = get_customer_by_id(customer_id)
             if customer and customer.get('telegram_id'):
-                # Burayı notification_service.py içindeki fonksiyonu kullarak yap
-                from notification_service import notify_customer_no_artisan
-                notification_result = await notify_customer_no_artisan(customer['telegram_id'], order_id)
-                logger.info(f"Customer notification about no artisan result: {notification_result}")
+                # Müştəriyə bildiriş göndərmək
+                await bot.send_message(
+                    chat_id=customer['telegram_id'],
+                    text=f"ℹ️ *Sifariş ləğv edildi*\n\n"
+                         f"Təəssüf ki, yaxınlıqda uyğun usta tapılmadı.\n"
+                         f"Zəhmət olmasa, yeni bir sifariş verin və ya daha sonra yenidən cəhd edin.",
+                    parse_mode="Markdown"
+                )
+                logger.info(f"Customer notification sent about cancellation for order {order_id}")
+                
+                # Müştəri menyusunu göstər
+                fake_message = types.Message.to_object({
+                    'message_id': 0, 
+                    'date': 0, 
+                    'chat': {'id': customer['telegram_id'], 'type': 'private'}, 
+                    'from': {'id': customer['telegram_id']}, 
+                    'content_type': 'text', 
+                    'text': ''
+                })
+                await show_customer_menu(fake_message)
             else:
                 logger.error(f"Customer {customer_id} not found or telegram_id missing")
         else:
