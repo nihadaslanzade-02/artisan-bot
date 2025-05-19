@@ -473,6 +473,12 @@ async def send_review_request_to_customer(order_id):
             logger.error(f"Customer has no telegram ID for review request, order {order_id}")
             return False
         
+        # Check if customer has already reviewed this order to prevent duplicate reviews
+        from db import has_customer_reviewed_order
+        if has_customer_reviewed_order(order_id, customer.get('id')):
+            logger.info(f"Customer {customer.get('id')} has already reviewed order {order_id}, skipping review request")
+            return True
+        
         # Create review keyboard
         keyboard = InlineKeyboardMarkup(row_width=5)
         for i in range(1, 6):

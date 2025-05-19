@@ -4490,42 +4490,54 @@ def register_handlers(dp):
             # Ləğv səbəbini təyin et
             cancel_reason = "Usta tərəfindən ləğv edildi (çata bilmədi)"
             
-            # Sifarişi ləğv et
-            update_order_status(order_id, "cancelled")
+            # Update order status before trying to find new artisan
+            update_order_status(order_id, "pending")
             
-            # Bu ustanı növbəti bir sifarişdən kənarlaşdır
-            from db import skip_artisan_for_next_order
-            skip_artisan_for_next_order(artisan_id)
+            # Ustaya bildir
+            await callback_query.message.edit_text(
+                callback_query.message.text + "\n\n❌ Bu sifarişə getməkdən imtina etdiniz",
+                parse_mode="Markdown"
+            )
+            
+            # Try to find and assign a new artisan
+            new_artisan_found = await find_and_assign_new_artisan(order_id)
             
             # Müştəriyə bildir
             customer = get_customer_by_id(order['customer_id'])
             if customer and customer.get('telegram_id'):
-                await bot.send_message(
-                    chat_id=customer['telegram_id'],
-                    text=f"ℹ️  *Sifariş ləğv edildi* \n\n"
-                        f"Təəssüf ki, usta sifarişinizə gələ bilməyəcəyini bildirdi.\n"
-                        f"Zəhmət olmasa, yeni bir sifariş verin və ya başqa bir usta seçin.",
-                    parse_mode="Markdown"
-                )
+                if new_artisan_found:
+                    await bot.send_message(
+                        chat_id=customer['telegram_id'],
+                        text=f"ℹ️ *Usta dəyişikliyi*\n\n"
+                            f"Təyin edilmiş usta sifarişinizə gələ bilməyəcəyini bildirdi.\n"
+                            f"Sizin üçün yeni bir usta tapıldı. Zəhmət olmasa, gözləyin.",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    # If no new artisan found, update order status to cancelled and notify customer
+                    update_order_status(order_id, "cancelled")
+                    await bot.send_message(
+                        chat_id=customer['telegram_id'],
+                        text=f"ℹ️ *Sifariş ləğv edildi*\n\n"
+                            f"Təəssüf ki, usta sifarişinizə gələ bilməyəcəyini bildirdi və yaxınlıqda başqa uyğun usta tapılmadı.\n"
+                            f"Zəhmət olmasa, yeni bir sifariş verin və ya daha sonra yenidən cəhd edin.",
+                        parse_mode="Markdown"
+                    )
+                    
+                    # Müştəri menyusunu göstər
+                    # Fake message object to use with show_customer_menu
+                    fake_message = types.Message.to_object({'message_id': 0, 'date': 0, 
+                                                        'chat': {'id': customer['telegram_id'], 'type': 'private'}, 
+                                                        'from': {'id': customer['telegram_id']}, 
+                                                        'content_type': 'text', 'text': ''})
+                    await show_customer_menu(fake_message)
+            
+            # Notify the artisan about the outcome
+            if new_artisan_found:
+                await callback_query.answer("Sifariş başqa bir ustaya göndərildi")
+            else:
+                await callback_query.answer("Sifariş ləğv edildi, yaxınlıqda başqa uyğun usta tapılmadı")
                 
-                # Müştəri menyusunu göstər
-                # Fake message object to use with show_customer_menu
-                fake_message = types.Message.to_object({'message_id': 0, 'date': 0, 
-                                                    'chat': {'id': customer['telegram_id'], 'type': 'private'}, 
-                                                    'from': {'id': customer['telegram_id']}, 
-                                                    'content_type': 'text', 'text': ''})
-                await show_customer_menu(fake_message)
-
-            
-            # Ustaya bildir
-            await callback_query.message.answer(
-                f"ℹ️  *Sifariş ləğv edildi* \n\n"
-                f"Sifariş #{order_id} ləğv edildi. Müştəriyə bildiriş göndərildi.\n\n"
-                f"⚠️  *Diqqət* : Növbəti 1 sifarişdən kənarlaşdırılacaqsınız. "
-                f"Bu, sifarişləri müntəzəm ləğv etmək sistemin etibarlılığını azaltdığı üçün tətbiq edilir."
-            )
-            
-            await callback_query.answer()
             
         except Exception as e:
             logger.error(f"Error in artisan_cannot_arrive: {e}")

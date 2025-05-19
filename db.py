@@ -1777,6 +1777,31 @@ def add_review(order_id, customer_id, artisan_id, rating, comment=None):
             conn.close()
 
 
+def has_customer_reviewed_order(order_id, customer_id):
+    """Check if a customer has already reviewed an order
+    
+    Args:
+        order_id (int): ID of the order
+        customer_id (int): ID of the customer
+        
+    Returns:
+        bool: True if the customer has already reviewed the order, False otherwise
+    """
+    try:
+        query = """
+            SELECT COUNT(*) 
+            FROM reviews 
+            WHERE order_id = %s AND customer_id = %s
+        """
+        
+        result = execute_query(query, (order_id, customer_id), fetchone=True)
+        
+        return result[0] > 0 if result else False
+    except Exception as e:
+        logger.error(f"Error checking if customer has reviewed order: {e}", exc_info=True)
+        return False
+
+
 def get_artisan_reviews(artisan_id):
     """Get reviews for a specific artisan
     

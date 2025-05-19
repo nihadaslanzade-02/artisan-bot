@@ -1146,9 +1146,9 @@ async def show_customers_list(message):
     try:
         from db import execute_query
         
-        # Get recent customers
+        # Get recent customers with ratings
         query = """
-            SELECT id, name, phone, city, created_at, active
+            SELECT id, name, phone, city, created_at, active, rating, total_reviews
             FROM customers
             ORDER BY created_at DESC
             LIMIT 20
@@ -1180,6 +1180,18 @@ async def show_customers_list(message):
             # Format status
             status_emoji = "🟢" if customer.get('active', True) else "🔴"
             status_text = "Aktiv" if customer.get('active', True) else "Bloklanıb"
+            
+            # Format rating
+            rating = customer.get('rating', 0)
+            total_reviews = customer.get('total_reviews', 0)
+            
+            if rating and total_reviews > 0:
+                rating_text = f"{rating:.1f}/5"
+                rating_stars = "⭐" * round(rating)
+            else:
+                rating_text = "Qiymətləndirilməyib"
+                rating_stars = ""
+            
             # Markdown özel karakterleri kaçışla (escape)
             masked_name = masked_customer['name'].replace('*', '\\*')
             masked_phone = masked_customer['phone'].replace('*', '\\*')
@@ -1193,6 +1205,7 @@ async def show_customers_list(message):
                 f"Ad: {masked_name}\n"
                 f"Telefon: {masked_phone}\n"
                 f"Şəhər: {city}\n"
+                f"Reytinq: {rating_text} {rating_stars}\n"
                 f"Qeydiyyat tarixi: {formatted_date}\n"
                 f"Status: {status_emoji} {status_text}"
             )

@@ -1188,7 +1188,7 @@ def register_handlers(dp):
                 
                 # Duruma göre emoji ayarla
                 status_emoji = "⏳" if status == "pending" else "✅" if status == "completed" else "👍" if status == "accepted" else "❌"
-                status_text = "Gözləyir" if status == "pending" else "Tamamlanıb" if status == "completed" else "Qəbul edildi" if status == "accepted" else "Ləğv edilib"
+                status_text = "Gözləyir" if status == "pending" else "Tamamlanıb" if status == "completed" else "Qəbul edilib" if status == "accepted" else "Ləğv edilib"
                 
                 # Sipariş metnini oluştur
                 order_text = (
@@ -1434,8 +1434,7 @@ def register_handlers(dp):
             )
             await state.finish()
             await show_customer_menu(callback_query.message)
-
-        # Handler for profile management
+    
     @dp.message_handler(lambda message: message.text == "👤 Profilim")
     async def show_profile(message: types.Message, state: FSMContext):
         """Show customer profile"""
@@ -1482,7 +1481,7 @@ def register_handlers(dp):
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
             await show_customer_menu(message)
-    
+
     @dp.callback_query_handler(lambda c: c.data == "edit_name", state=ProfileManagementStates.viewing_profile)
     async def edit_name(callback_query: types.CallbackQuery, state: FSMContext):
         """Start editing customer name"""
@@ -3059,6 +3058,23 @@ def register_handlers(dp):
                 order_id = int(parts[1])
                 rating = int(parts[2])
                 
+                # Get order details to check customer ID
+                order = get_order_details(order_id)
+                if not order:
+                    await callback_query.answer("Bu sifariş tapılmadı.")
+                    return
+                
+                customer_id = order.get('customer_id')
+                
+                # Check if the customer has already reviewed this order
+                from db import has_customer_reviewed_order
+                if has_customer_reviewed_order(order_id, customer_id):
+                    await callback_query.answer("Bu sifarişi artıq qiymətləndirmisiniz.")
+                    
+                    # Delete the review message with the stars
+                    await callback_query.message.delete()
+                    return
+                
                 # Store rating in state
                 async with state.proxy() as data:
                     data['order_id'] = order_id
@@ -3070,6 +3086,9 @@ def register_handlers(dp):
                     f"İstəsəniz, əlavə şərh də yaza bilərsiniz. Əgər şərh yazmaq istəmirsinizsə, "
                     f"'Şərh yoxdur' yazın."
                 )
+                
+                # Delete the original rating message with stars
+                await callback_query.message.delete()
                 
                 # Set state to wait for comment
                 await OrderRatingState.waiting_for_comment.set()
