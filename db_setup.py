@@ -253,7 +253,7 @@ def setup_database():
                 payment_date DATETIME,
                 receipt_file_id TEXT,
                 receipt_uploaded_at DATETIME,
-                receipt_verified TINYINT(1) DEFAULT 0,
+                receipt_verified TINYINT(1) DEFAULT NULL,
                 admin_payment_deadline DATETIME,
                 admin_payment_completed TINYINT(1) DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

@@ -43,7 +43,7 @@ COMMISSION_RATES = {
 
 # Payment Settings
 ADMIN_CARD_NUMBER = "4098 5844 9700 2863"  # Card number for cash payment commission transfer
-ADMIN_CARD_HOLDER = "Nihad Aslanzade"  # Card holder name
+ADMIN_CARD_HOLDER = "N---- A----"  # Card holder name
 PAYMENT_WAIT_TIME_HOURS = 24  # Hours to wait for commission payment
 BLOCK_AFTER_HOURS = 30  # Hours after which to block artisan for non-payment
 FINE_PERCENTAGE = 15  # Additional fine percentage for late payments

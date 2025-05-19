@@ -100,11 +100,14 @@ async def check_payment_status_changes():
     try:
         from db import execute_query
         
-        # Get orders with receipt_verified = False
+        # Get orders with receipt_verified = 0 (meaning invalid)
+        # Only for card payments
         invalid_receipts_query = """
             SELECT order_id
             FROM order_payments
-            WHERE receipt_verified = FALSE
+            WHERE receipt_verified = 0
+            AND payment_method != 'cash'
+            AND receipt_file_id IS NOT NULL
             AND NOT EXISTS (
                 SELECT 1 FROM notification_log 
                 WHERE notification_type = 'invalid_receipt' 
@@ -124,11 +127,11 @@ async def check_payment_status_changes():
             )
         """
         
-        # Check null receipts
+        # Check pending receipts
         invalid_receipts = execute_query(invalid_receipts_query, fetchall=True)
         for receipt in invalid_receipts:
             order_id = receipt[0]
-            logger.info(f"Found invalid receipt for order {order_id}")
+            logger.info(f"Found pending receipt for order {order_id}")
             await notify_customer_about_invalid_receipt(order_id)
             
             # Log notification

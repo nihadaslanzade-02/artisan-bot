@@ -307,7 +307,7 @@ async def show_admin_receipts(message):
             JOIN artisans a ON o.artisan_id = a.id
             LEFT JOIN order_payments op ON o.id = op.order_id
             WHERE op.receipt_file_id IS NOT NULL 
-            AND (op.receipt_verified IS FALSE)
+            AND (op.receipt_verified IS NULL OR op.receipt_verified IS FALSE)
             ORDER BY op.receipt_uploaded_at DESC
             LIMIT 50
         """
@@ -2610,16 +2610,16 @@ async def scheduled_tasks():
     """Run scheduled tasks at regular intervals"""
     while True:
         try:
-            # Run payment status checks every 15 minutes
+            # Run payment status checks every 5 minutes
             from admin_service import check_payment_status_changes
             await check_payment_status_changes()
             
-            # Sleep for 15 minutes
-            await asyncio.sleep(15 * 60)  # 15 minutes
+            # Sleep for 5 minutes
+            await asyncio.sleep(5 * 60)  # 5 minutes
         except Exception as e:
             logger.error(f"Error in scheduled tasks: {e}")
-            # Sleep for 5 minutes in case of error
-            await asyncio.sleep(5 * 60)
+            # Sleep for 1 minute in case of error
+            await asyncio.sleep(60)
 
 async def admin_webhook_handler(request):
     """Handle webhooks from admin panel"""

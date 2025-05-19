@@ -878,6 +878,7 @@ def register_handlers(dp):
             # Skip processing if user wants to cancel
             if message.text == "❌ Sifarişi ləğv et":
                 await cancel_order_process(message, state)
+                await show_customer_menu(message)
                 return
                 
             # Store the note in state

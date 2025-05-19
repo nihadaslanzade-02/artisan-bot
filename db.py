@@ -1303,27 +1303,87 @@ def set_order_price(order_id, price, admin_fee=None, artisan_amount=None):
 
 
 def update_payment_method(order_id, payment_method):
-    """Update the payment method for an order
+    """Update payment method for an order
     
     Args:
         order_id (int): ID of the order
-        payment_method (str): Payment method ('card' or 'cash')
+        payment_method (str): Payment method (card, cash, etc.)
         
     Returns:
         bool: True if successful, False otherwise
     """
-    query = """
-        UPDATE order_payments 
-        SET payment_method = %s
-        WHERE order_id = %s
-    """
-    
     try:
-        execute_query(query, (payment_method, order_id), commit=True)
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if payment record exists
+        cursor.execute("SELECT id FROM order_payments WHERE order_id = %s", (order_id,))
+        payment_record = cursor.fetchone()
+        
+        if payment_record:
+            # Update existing record with payment method and set receipt_verified to NULL for all payment methods
+            cursor.execute(
+                """
+                UPDATE order_payments 
+                SET payment_method = %s,
+                    payment_status = 'pending',
+                    receipt_verified = NULL,
+                    updated_at = NOW()
+                WHERE order_id = %s
+                """,
+                (payment_method, order_id)
+            )
+        else:
+            # Get order price
+            cursor.execute("SELECT price FROM orders WHERE id = %s", (order_id,))
+            price_result = cursor.fetchone()
+            
+            if not price_result or price_result[0] is None:
+                logger.error(f"Order {order_id} has no price set when updating payment method")
+                conn.rollback()
+                return False
+            
+            price = float(price_result[0])
+            
+            # Calculate commission
+            commission_rate = 0.16  # Default
+            for tier, info in COMMISSION_RATES.items():
+                threshold = info.get("threshold")
+                if threshold is not None and price <= threshold:
+                    commission_rate = info["rate"] / 100
+                    break
+            
+            admin_fee = round(price * commission_rate, 2)
+            artisan_amount = round(price - admin_fee, 2)
+            
+            # Create new payment record
+            cursor.execute(
+                """
+                INSERT INTO order_payments 
+                (order_id, amount, admin_fee, artisan_amount, payment_method, 
+                 payment_status, receipt_verified, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, 'pending', NULL, NOW(), NOW())
+                """,
+                (order_id, price, admin_fee, artisan_amount, payment_method)
+            )
+        
+        # Update order payment method field as well
+        cursor.execute(
+            "UPDATE orders SET payment_method = %s WHERE id = %s",
+            (payment_method, order_id)
+        )
+        
+        conn.commit()
         return True
+        
     except Exception as e:
         logger.error(f"Error updating payment method: {e}")
+        if conn:
+            conn.rollback()
         return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def save_payment_receipt(order_id, file_id):
@@ -1358,7 +1418,7 @@ def save_payment_receipt(order_id, file_id):
                         receipt_uploaded_at = NOW(),
                         payment_status = 'pending',
                         payment_date = NOW(),
-                        receipt_verified = FALSE,
+                        receipt_verified = NULL,
                         admin_payment_completed = FALSE
                     WHERE order_id = %s
                     """,
@@ -1403,7 +1463,7 @@ def save_payment_receipt(order_id, file_id):
                     (order_id, amount, admin_fee, artisan_amount, receipt_file_id, receipt_uploaded_at, 
                      payment_status, payment_method, payment_date, created_at, updated_at, receipt_verified)
                     VALUES (%s, %s, %s, %s, %s, NOW(), 'pending', 'cash', NOW(), 
-                            NOW(), NOW(), FALSE)
+                            NOW(), NOW(), NULL)
                     """,
                     (order_id, price, admin_fee, artisan_amount, file_id)
                 )
@@ -1983,12 +2043,12 @@ def check_receipt_verification_status(order_id):
         
         result = execute_query(query, (order_id,), fetchone=True)
         
-        if result:
+        if result is not None:
             if result[0] == 1:  # MySQL stores boolean as 0/1
                 return 'verified'
             elif result[0] == 0:
                 return 'invalid'
-            else:
+            elif result[0] is None:
                 return 'pending'
         return None
     except Exception as e:
@@ -2110,12 +2170,35 @@ def update_receipt_verification_status(order_id, is_verified):
         bool: True if successful, False otherwise
     """
     try:
-        query = """
-            UPDATE order_payments
-            SET receipt_verified = %s,
-                updated_at = NOW()
-            WHERE order_id = %s
-        """
+        # Different query based on verification status
+        if is_verified is True:
+            # If verified, also update payment_status to completed and set admin_payment_completed to TRUE
+            query = """
+                UPDATE order_payments
+                SET receipt_verified = %s,
+                    payment_status = 'completed',
+                    admin_payment_completed = TRUE,
+                    updated_at = NOW()
+                WHERE order_id = %s
+            """
+        elif is_verified is False:
+            # If rejected, update payment_status to rejected and ensure admin_payment_completed is FALSE
+            query = """
+                UPDATE order_payments
+                SET receipt_verified = %s,
+                    payment_status = 'rejected',
+                    admin_payment_completed = FALSE,
+                    updated_at = NOW()
+                WHERE order_id = %s
+            """
+        else:
+            # If status is None (pending), just update receipt_verified
+            query = """
+                UPDATE order_payments
+                SET receipt_verified = %s,
+                    updated_at = NOW()
+                WHERE order_id = %s
+            """
         
         # Convert Python None to MySQL NULL
         params = [is_verified if is_verified is not None else None, order_id]
@@ -2124,6 +2207,27 @@ def update_receipt_verification_status(order_id, is_verified):
         cursor = conn.cursor()
         
         cursor.execute(query, params)
+        
+        # If receipt is verified, also update the order table status
+        if is_verified is True:
+            cursor.execute(
+                """
+                UPDATE orders
+                SET payment_status = 'completed'
+                WHERE id = %s
+                """,
+                (order_id,)
+            )
+        elif is_verified is False:
+            cursor.execute(
+                """
+                UPDATE orders
+                SET payment_status = 'rejected'
+                WHERE id = %s
+                """,
+                (order_id,)
+            )
+        
         conn.commit()
         
         # Check if any rows were affected

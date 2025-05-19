@@ -296,15 +296,15 @@ async def notify_artisan_about_price_acceptance(order_id):
 
 # Add or update the notify_customer_about_invalid_receipt function in notification_service.py
 
-# notification_service.py - notify_customer_about_invalid_receipt funksiyasını düzəlt
+# notification_service.py - notify_customer_about_pending_receipt funksiyasını düzəlt
 
 async def notify_customer_about_invalid_receipt(order_id):
-    """Notify customer about invalid receipt"""
+    """Notify customer about pending receipt verification"""
     try:
         # Get order details
         order = get_order_details(order_id)
         if not order:
-            logger.error(f"Order {order_id} not found for invalid receipt notification")
+            logger.error(f"Order {order_id} not found for receipt verification notification")
             return False
         
         # Get customer details
@@ -328,21 +328,21 @@ async def notify_customer_about_invalid_receipt(order_id):
             callback_data=f"resend_receipt_{order_id}"
         ))
         
-        # Send warning message with 1 hour deadline
+        # Send information message with 24 hour deadline
         await bot.send_message(
             chat_id=customer_telegram_id,
-            text=f"⚠️ *Xəbərdarlıq: Qəbz təsdiqlənmədi!*\n\n"
-                 f"Sifariş #{order_id} üçün göndərdiyiniz ödəniş qəbzi doğrulanmadı.\n\n"
-                 f"Zəhmət olmasa, 1 saat ərzində aşağıdakı karta {price:.2f} AZN məbləğində ödəniş edin:\n"
+            text=f"⚠️ *Xəbərdarlıq: Qəbz gözləmədədir!*\n\n"
+                 f"Sifariş #{order_id} üçün göndərdiyiniz ödəniş qəbzi yoxlanılır.\n\n"
+                 f"24 saat ərzində inzibatçı tərəfindən doğrulanmasa, ödəniş qəbziniz avtomatik olaraq etibarsız sayılacaq. Zəhmət olmasa, əmin olun ki, göndərdiyiniz qəbz aşağıdakı karta {price:.2f} AZN məbləğində ödənişi göstərir:\n"
                  f"Kart nömrəsi: {ADMIN_CARD_NUMBER}\n"
                  f"Sahibi: {ADMIN_CARD_HOLDER}\n\n"
-                 f"⚠️ *Diqqət*: 1 saat ərzində ödəniş edilməzsə, hesabınız bloklanacaq və ümumi məbləğin 50%-i həcmində cərimə tətbiq ediləcək.\n\n"
-                 f"Ödənişi etdikdən sonra qəbzi göndərmək üçün aşağıdakı düyməni istifadə edin:",
+                 f"⚠️ *Diqqət*: 24 saat ərzində qəbziniz doğrulanmasa və ya etibarsız hesab edilərsə, hesabınız bloklanacaq və ümumi məbləğin 50%-i həcmində cərimə tətbiq ediləcək.\n\n"
+                 f"Başqa qəbziniz varsa, aşağıdakı düyməni istifadə edərək göndərə bilərsiniz:",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
         
-        # Schedule blocking after 1 hour if not paid
+        # Schedule blocking after 24 hours if not paid
         import asyncio
         asyncio.create_task(block_customer_after_timeout(order_id, customer.get('id'), price))
         
@@ -354,13 +354,13 @@ async def notify_customer_about_invalid_receipt(order_id):
 async def block_customer_after_timeout(order_id, customer_id, required_payment):
     """Block customer after timeout if payment not made"""
     try:
-        # Wait 1 hour
-        await asyncio.sleep(60 * 60)  # 60 seconds * 60 minutes = 1 hour
+        # Wait 24 hours
+        await asyncio.sleep(24 * 60 * 60)  # 24 hours
         
         # Check again if receipt has been verified
         status = check_receipt_verification_status(order_id)
         
-        if status == 'invalid':
+        if status == 'invalid' or status == 'pending':
             # Still not verified, block customer
             block_reason = f"Sifariş #{order_id} üçün etibarsız ödəniş qəbzi"
 
@@ -397,6 +397,13 @@ async def notify_artisan_about_payment_transfer(order_id):
         if not order:
             logger.error(f"Order {order_id} not found for payment transfer notification")
             return False
+        
+        # Get payment method to check if it's cash payment
+        # If cash payment, no need to notify artisan about transfer
+        payment_details = debug_order_payment(order_id)
+        if payment_details and payment_details.get('payment_method') == 'cash':
+            logger.info(f"Skipping payment transfer notification for cash payment. Order ID: {order_id}")
+            return True
         
         # Get artisan details
         artisan_id = order.get('artisan_id')
@@ -471,11 +478,38 @@ async def send_review_request_to_customer(order_id):
         for i in range(1, 6):
             keyboard.insert(InlineKeyboardButton(f"{i}⭐", callback_data=f"review_{order_id}_{i}"))
         
+        artisan_id = order.get('artisan_id')
+        # Əvvəlki kod: artisan = get_artisan_by_id(artisan_id)
+        from crypto_service import decrypt_data
+        
+        # db.py-dəki get_artisan_by_id funksiyası artıq deşifrə edilmiş versiya qaytarır,
+        # amma bəzən ola bilər ki, deşifrələmə tam işləməsin
+        artisan = get_artisan_by_id(artisan_id)
+        
+        # Əlavə təhlükəsizlik üçün əl ilə də deşifrə edirik
+        artisan_decrypted = decrypt_dict_data(artisan, mask=False)
+        artisan_name = artisan_decrypted.get('name', 'Usta')
+        artisan_phone = artisan_decrypted.get('phone', 'Telefon')
+
+
+        # Əgər məlumatlar hələ də şifrəlidirsə, əl ilə deşifrə etməyə çalışırıq
+        if artisan_name and isinstance(artisan_name, str) and artisan_name.startswith("gAAAAA"):
+            try:
+                artisan_name = decrypt_data(artisan_name)
+            except Exception as e:
+                logger.error(f"Error decrypting artisan name: {e}")
+                
+        if artisan_phone and isinstance(artisan_phone, str) and artisan_phone.startswith("gAAAAA"):
+            try:
+                artisan_phone = decrypt_data(artisan_phone)
+            except Exception as e:
+                logger.error(f"Error decrypting artisan phone: {e}")
+
         # Send review request
         message_text = (
             f"⭐ *Xidməti qiymətləndirin*\n\n"
             f"Sifariş #{order_id} uğurla tamamlandı!\n"
-            f"Usta: {artisan['name']}\n"
+            f"Usta: {artisan_name}\n"
             f"Xidmət: {order.get('service')}\n\n"
             f"Zəhmət olmasa, ustanın xidmətini qiymətləndirərək başqalarına da kömək edin."
         )
@@ -515,8 +549,30 @@ async def notify_artisan_about_invalid_commission(order_id):
             logger.error(f"Artisan telegram ID not found for order {order_id}")
             return False
         
-        # Calculate required payment (admin fee plus penalty)
-        admin_fee = float(order.get('admin_fee', 0))
+        # Get payment details from order_payments table
+        payment_details = debug_order_payment(order_id)
+        admin_fee = 0
+        
+        if payment_details and payment_details.get('admin_fee') is not None:
+            admin_fee = float(payment_details.get('admin_fee'))
+        else:
+            # Fallback calculation if order_payments doesn't have admin_fee
+            price = float(order.get('price', 0))
+            commission_rate = 0.12  # Default rate 12%
+            for tier, info in COMMISSION_RATES.items():
+                threshold = info.get("threshold")
+                if threshold is not None and price <= threshold:
+                    commission_rate = info["rate"] / 100
+                    break
+            admin_fee = round(price * commission_rate, 2)
+        
+        # Ensure admin_fee is not zero
+        if admin_fee <= 0:
+            logger.warning(f"Admin fee calculation for order {order_id} resulted in {admin_fee}. Using default calculation.")
+            price = float(order.get('price', 0))
+            admin_fee = round(price * 0.12, 2)  # Default 12% if all else fails
+        
+        # Calculate total amount with penalty
         penalty_percentage = 0.15  # 15% penalty
         total_amount = admin_fee * (1 + penalty_percentage)
         
@@ -527,7 +583,7 @@ async def notify_artisan_about_invalid_commission(order_id):
             callback_data=f"resend_commission_{order_id}"
         ))
         
-        # Send warning message with 1 hour deadline
+        # Send warning message with 18 hour deadline
         await bot.send_message(
             chat_id=artisan_telegram_id,
             text=f"⚠️ *Xəbərdarlıq: Komissiya qəbzi təsdiqlənmədi!*\n\n"
