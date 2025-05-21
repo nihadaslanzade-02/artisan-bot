@@ -59,7 +59,7 @@ SUPPORT_PHONE = "+994506606351"  # Support contact phone
 
 # Location Settings
 DEFAULT_SEARCH_RADIUS = 10  # km - Default radius for searching nearby artisans
-MAX_SEARCH_RADIUS = 50  # km - Maximum allowed search radius
+MAX_SEARCH_RADIUS = 30  # km - Maximum allowed search radius
 
 # Time Settings
 TIME_SLOTS_START_HOUR = 1  

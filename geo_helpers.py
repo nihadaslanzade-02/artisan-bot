@@ -199,7 +199,7 @@ async def get_location_name(latitude: float, longitude: float) -> Optional[str]:
 def find_nearby_artisans(
     latitude: float, 
     longitude: float, 
-    radius: float = 10.0, 
+    radius: float = 25.0, 
     service: str = None, 
     subservice: str = None,
     limit: int = 20

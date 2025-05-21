@@ -949,7 +949,7 @@ def register_handlers(dp):
             artisans = get_nearby_artisans(
                 latitude=data['latitude'], 
                 longitude=data['longitude'],
-                radius=10, 
+                radius=25, 
                 service=service,
                 subservice=data.get('subservice')
             )
@@ -1295,6 +1295,8 @@ def register_handlers(dp):
     @dp.message_handler(content_types=types.ContentType.LOCATION, state=NearbyArtisanStates.sharing_location)
     async def process_location_for_nearby(message: types.Message, state: FSMContext):
         """Process shared location for finding nearby artisans"""
+        
+
         try:
             latitude = message.location.latitude
             longitude = message.location.longitude
@@ -1336,7 +1338,9 @@ def register_handlers(dp):
             )
             await state.finish()
             await show_customer_menu(message)
-    
+
+
+
     # Handler for service filter selection (nearby artisans)
     @dp.callback_query_handler(
         lambda c: c.data.startswith('nearby_'), 
@@ -1356,14 +1360,14 @@ def register_handlers(dp):
             if len(filter_data) == 3 and filter_data[1] == "service":
                 service = filter_data[2]
                 # Find nearby artisans with service filter
-                artisans = get_nearby_artisans(latitude, longitude, radius=10, service=service)
+                artisans = get_nearby_artisans(latitude, longitude, radius=25, service=service)
                 await callback_query.message.answer(
                     f"🔍 *{service}* xidməti göstərən yaxınlıqdakı ustalar axtarılır...",
                     parse_mode="Markdown"
                 )
             else:
                 # Find all nearby artisans
-                artisans = get_nearby_artisans(latitude, longitude, radius=10)
+                artisans = get_nearby_artisans(latitude, longitude, radius=25)
                 await callback_query.message.answer(
                     "🔍 Yaxınlıqdakı bütün ustalar axtarılır..."
                 )
@@ -1388,38 +1392,70 @@ def register_handlers(dp):
             
             # Display each artisan
             for artisan in artisans:
-                artisan_id = artisan[0]     # ID
-                name = artisan[1]           # Name
-                phone = artisan[2]          # Phone
-                service = artisan[3]        # Service
-                location = artisan[4]       # Location
-                distance = artisan[-1]      # Distance (added by get_nearby_artisans)
-                
-                # Format distance
-                formatted_distance = format_distance(distance)
-                
-                artisan_text = (
-                    f"👤 *{name}*\n"
-                    f"🛠 *Xidmət:* {service}\n"
-                    f"📞 *Əlaqə:* {phone}\n"
-                    f"🏙 *Ərazi:* {location}\n"
-                    f"📏 *Məsafə:* {formatted_distance}\n"
-                )
-                
-                # Create an inline button to immediately order from this artisan
-                keyboard = InlineKeyboardMarkup()
-                keyboard.add(
-                    InlineKeyboardButton(
-                        "✅ Bu ustadan sifariş ver", 
-                        callback_data=f"order_from_{artisan_id}"
+                try:
+                    # Artisan ID-ni indi sözlük formatından alırıq
+                    artisan_id = artisan.get('id')
+                    if not artisan_id:
+                        logger.error(f"Artisan ID not found in data: {artisan}")
+                        continue
+                    
+                    # Maskalanmış usta məlumatlarını əldə edirik
+                    try:
+                        masked_artisan = get_masked_artisan_by_id(artisan_id)
+                        if not masked_artisan:
+                            logger.warning(f"get_masked_artisan_by_id boş nəticə verdi, ID: {artisan_id}")
+                    except Exception as e:
+                        logger.error(f"Maskalanmış ustanı əldə edərkən xəta: {e}")
+                        masked_artisan = None
+                    
+                    # Əgər maskelənmiş usta bilgisi alınmazsa, default dəyərlər istifadə et
+                    if not masked_artisan:
+                        name = "U**** A***"
+                        phone = "+994 ** *** **" + str(artisan_id)[-2:]
+                        service = artisan.get('service', "Xidmət")
+                        location = artisan.get('location', "Məkan məlumatı yoxdur")
+                    else:
+                        # Maskelənmiş bilgiləri al
+                        name = masked_artisan.get('name', "Bilinmir")
+                        phone = masked_artisan.get('phone', "Bilinmir")
+                        service = masked_artisan.get('service', "Bilinmir")
+                        location = masked_artisan.get('location', "Bilinmir")
+                    
+                    # Məsafəni sözlük formatından alırıq
+                    distance = artisan.get('distance')
+                    
+                    # Format distance
+                    try:
+                        formatted_distance = format_distance(distance) if distance is not None else "Bilinmir"
+                    except Exception as e:
+                        logger.error(f"Məsafəni formatlayarkən xəta: {e}")
+                        formatted_distance = "Bilinmir"
+                    import html
+                    artisan_text = (
+                        f"👤 <b>{html.escape(name)}</b>\n"
+                        f"🛠 <b>Xidmət:</b> {html.escape(service)}\n"
+                        f"📞 <b>Əlaqə:</b> {html.escape(phone)}\n"
+                        f"🏙 <b>Ərazi:</b> {html.escape(artisan['location'])}\n"
+                        f"📏 <b>Məsafə:</b> {html.escape(str(artisan['distance']))}\n"
                     )
-                )
-                
-                await callback_query.message.answer(
-                    artisan_text,
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
-                )
+                    
+                    # Create an inline button to immediately order from this artisan
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(
+                        InlineKeyboardButton(
+                            "✅ Bu ustadan sifariş ver", 
+                            callback_data=f"orde_from_{artisan_id}"
+                        )
+                    )
+                    
+                    await callback_query.message.answer(
+                        artisan_text,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+                except Exception as artisan_error:
+                    logger.error(f"Usta məlumatlarını göstərərkən xəta: {artisan_error}")
+                    continue  # Xəta baş versə, növbəti ustaya keçirik
             
             # Return to customer menu
             await show_customer_menu(callback_query.message)
@@ -1501,9 +1537,9 @@ def register_handlers(dp):
             await state.finish()
             await show_customer_menu(callback_query.message)
     
+    # customer_handler.py içində
     @dp.message_handler(state=ProfileManagementStates.updating_name)
     async def process_updated_name(message: types.Message, state: FSMContext):
-        """Process updated customer name"""
         try:
             # Validate and store name
             name = message.text.strip()
@@ -1514,21 +1550,29 @@ def register_handlers(dp):
                 )
                 return
             
-            # Update customer name in database
+            # Burada direkt istifadəçinin telegram_id-sini istifadə edirik
             telegram_id = message.from_user.id
+            
+            # Bugün yaratan kodu əvəz edirik
+            # update_customer_profile funksiyasını telegram_id ilə çağırırıq, tam obyektlə deyil
             success = update_customer_profile(telegram_id, {'name': name})
             
             if success:
                 await message.answer(
                     "✅ Adınız uğurla yeniləndi!"
                 )
+                
+                # Profil məlumatlarını yeniləyirik və yenidən göstəririk
+                # (Ancaq birbaşa menyuya qayıtmaq üçün)
+                await state.finish()
+                await show_customer_menu(message)
             else:
                 await message.answer(
-                    "❌ Adınız yenilənərkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin."
+                    "❌ Ad yenilənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
                 )
-            
-            # Show updated profile
-            await show_profile(message, state)
+                # Xəta baş verdisə menyuya qayıt
+                await state.finish()
+                await show_customer_menu(message)
             
         except Exception as e:
             logger.error(f"Error in process_updated_name: {e}")
@@ -1740,7 +1784,7 @@ def register_handlers(dp):
             await show_role_selection(message)
     
     # Handler for order from specific artisan
-    @dp.callback_query_handler(lambda c: c.data.startswith('order_from_'))
+    @dp.callback_query_handler(lambda c: c.data.startswith('orde_from_'))
     async def order_from_artisan(callback_query: types.CallbackQuery, state: FSMContext):
         """Start ordering process from a specific artisan"""
         try:
@@ -1765,11 +1809,28 @@ def register_handlers(dp):
             
             async with state.proxy() as data:
                 data['artisan_id'] = artisan_id
-                data['service'] = artisan[3]  # Service is the 4th column
+                data['service'] = artisan['service']  # Service is the 4th column
             
             # Get subservices for this service
-            subservices = get_subservices(artisan[3])
+            subservices = get_subservices(artisan['service'])
+            # Maskalanmış usta məlumatlarını əldə edirik
+            try:
+                masked_artisan = get_masked_artisan_by_id(artisan_id)
+                if not masked_artisan:
+                    logger.warning(f"get_masked_artisan_by_id boş nəticə verdi, ID: {artisan_id}")
+            except Exception as e:
+                logger.error(f"Maskalanmış ustanı əldə edərkən xəta: {e}")
+                masked_artisan = None
             
+            # Əgər maskelənmiş usta bilgisi alınmazsa, default dəyərlər istifadə et
+            if not masked_artisan:
+                name = "U**** A***"
+                
+            else:
+                # Maskelənmiş bilgiləri al
+                name = masked_artisan.get('name', "Bilinmir")
+            
+            import html
             if subservices:
                 # Create keyboard with subservice options
                 keyboard = InlineKeyboardMarkup(row_width=1)
@@ -1784,8 +1845,9 @@ def register_handlers(dp):
                 
                 keyboard.add(InlineKeyboardButton("🔙 Geri", callback_data="back_to_menu"))
                 
+
                 await callback_query.message.answer(
-                    f"Siz *{artisan[1]}* adlı ustadan *{artisan[3]}* xidməti sifariş vermək istəyirsiniz.\n\n"
+                    f"Siz {html.escape(name)} adlı ustadan *{artisan['service']}* xidməti sifariş vermək istəyirsiniz.\n\n"
                     f"İndi zəhmət olmasa, daha dəqiq xidmət növünü seçin:",
                     reply_markup=keyboard,
                     parse_mode="Markdown"
@@ -1799,7 +1861,7 @@ def register_handlers(dp):
                 keyboard.add(KeyboardButton("❌ Sifarişi ləğv et"))
                 
                 await callback_query.message.answer(
-                    f"Siz *{artisan[1]}* adlı ustadan *{artisan[3]}* xidməti sifariş vermək istəyirsiniz.\n\n"
+                    f"Siz {html.escape(name)} adlı ustadan *{artisan['service']}* xidməti sifariş vermək istəyirsiniz.\n\n"
                     f"📍 İndi zəhmət olmasa, yerləşdiyiniz məkanı paylaşın:",
                     reply_markup=keyboard,
                     parse_mode="Markdown"
@@ -1810,7 +1872,7 @@ def register_handlers(dp):
             await callback_query.answer()
             
         except Exception as e:
-            logger.error(f"Error in order_from_artisan: {e}")
+            logger.error(f"Error in orde_from_artisan: {e}")
             await callback_query.message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )

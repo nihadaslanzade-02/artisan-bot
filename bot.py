@@ -1148,7 +1148,7 @@ async def show_customers_list(message):
         
         # Get recent customers with ratings
         query = """
-            SELECT id, name, phone, city, created_at, active, rating, total_reviews
+            SELECT id, name, phone, city, created_at, active
             FROM customers
             ORDER BY created_at DESC
             LIMIT 20
@@ -1181,16 +1181,7 @@ async def show_customers_list(message):
             status_emoji = "🟢" if customer.get('active', True) else "🔴"
             status_text = "Aktiv" if customer.get('active', True) else "Bloklanıb"
             
-            # Format rating
-            rating = customer.get('rating', 0)
-            total_reviews = customer.get('total_reviews', 0)
-            
-            if rating and total_reviews > 0:
-                rating_text = f"{rating:.1f}/5"
-                rating_stars = "⭐" * round(rating)
-            else:
-                rating_text = "Qiymətləndirilməyib"
-                rating_stars = ""
+        
             
             # Markdown özel karakterleri kaçışla (escape)
             masked_name = masked_customer['name'].replace('*', '\\*')
@@ -1205,7 +1196,6 @@ async def show_customers_list(message):
                 f"Ad: {masked_name}\n"
                 f"Telefon: {masked_phone}\n"
                 f"Şəhər: {city}\n"
-                f"Reytinq: {rating_text} {rating_stars}\n"
                 f"Qeydiyyat tarixi: {formatted_date}\n"
                 f"Status: {status_emoji} {status_text}"
             )
@@ -1246,7 +1236,7 @@ async def show_customers_list(message):
     except Exception as e:
         logger.error(f"Error in show_customers_list: {e}")
         await message.answer("❌ Müştərilər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-
+        
 async def show_artisans_list(message):
     """Show list of artisans"""
     try:

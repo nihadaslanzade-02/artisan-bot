@@ -40,7 +40,7 @@ def setup_database():
             CREATE TABLE IF NOT EXISTS customers (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 telegram_id VARCHAR(255) UNIQUE,
-                name VARCHAR(500) NOT NULL UNIQUE,
+                name VARCHAR(500) NOT NULL,
                 phone TEXT,
                 city TEXT,
                 email TEXT,

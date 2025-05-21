@@ -4224,7 +4224,7 @@ def register_handlers(dp):
             artisans = get_nearby_artisans(
                 latitude=order['latitude'], 
                 longitude=order['longitude'],
-                radius=1, 
+                radius=10, 
                 service=order['service'],
                 subservice=order.get('subservice')
             )
@@ -4258,7 +4258,7 @@ def register_handlers(dp):
                 artisans = get_nearby_artisans(
                     latitude=order['latitude'], 
                     longitude=order['longitude'],
-                    radius=5,  # Increased radius
+                    radius=25,  # Increased radius
                     service=order['service'],
                     subservice=order.get('subservice')
                 )

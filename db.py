@@ -207,6 +207,15 @@ def update_customer_profile(telegram_id, data):
     Returns:
         bool: True if successful, False otherwise
     """
+    
+    # Customer ID dəyişəninin adını dəyişirik (anlaşılmazlıq olmasın)
+    customer = get_customer_by_telegram_id(telegram_id)
+    
+    # Müştəri tapılmadısa
+    if not customer:
+        logger.error(f"Customer not found for telegram_id: {telegram_id}")
+        return False
+        
     valid_fields = ['name', 'phone', 'city']
     update_parts = []
     params = []
@@ -218,18 +227,21 @@ def update_customer_profile(telegram_id, data):
     
     if not update_parts:
         return False  # Nothing to update
-        
-    params.append(telegram_id)  # For the WHERE clause
+    
+    # WHERE şərtində customer.id deyil, birbaşa telegram_id istifadə edirik
+    telegram_id_hash = hash_telegram_id(telegram_id)
+    params.append(telegram_id_hash)  # For the WHERE clause
     
     query = f"""
         UPDATE customers
         SET {', '.join(update_parts)}
-        WHERE telegram_id = %s
+        WHERE telegram_id_hash = %s
     """
     
     try:
         execute_query(query, params, commit=True)
         return True
+        
     except Exception as e:
         logger.error(f"Error updating customer profile: {e}")
         return False
@@ -1046,7 +1058,7 @@ def get_nearby_artisans(latitude, longitude, radius=10, service=None, subservice
         """
         params.append(subservice)
     
-    result = execute_query(query, params, fetchall=True)
+    result = execute_query(query, params, fetchall=True, dict_cursor=True)
     
     if not result:
         return []
@@ -1054,20 +1066,20 @@ def get_nearby_artisans(latitude, longitude, radius=10, service=None, subservice
     # Filter artisans by distance and add distance information
     nearby_artisans = []
     for artisan in result:
-        artisan_lat = artisan[5]  # latitude index
-        artisan_lon = artisan[6]  # longitude index
+        artisan_lat = artisan['latitude']  # latitude index
+        artisan_lon = artisan['longitude']  # longitude index
         
         if artisan_lat and artisan_lon:
             distance = calculate_distance(latitude, longitude, artisan_lat, artisan_lon)
             
             if distance <= radius:
                 # Convert to list to add distance field
-                artisan_with_distance = list(artisan)
-                artisan_with_distance.append(distance)
+                artisan_with_distance = dict(artisan)
+                artisan_with_distance['distance'] = distance
                 nearby_artisans.append(artisan_with_distance)
     
     # Sort by distance (ascending)
-    nearby_artisans.sort(key=lambda x: x[-1])
+    nearby_artisans.sort(key=lambda x: x['distance'])
     
     return nearby_artisans
 
