@@ -1,7 +1,7 @@
 # Changelog
 Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelog.
 
-## [Unreleased]
+## [Released]
 
 ### Added
 - 
@@ -12,6 +12,6 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 ### Fixed
 - 
 
-## [v1.0.0] – 2025-05-21
+## [v1.0.0] – 2025-05-20
 ### Added
 - İlkin stabil buraxılış: müştəri menyuları, usta qeydiyyatı, admin paneli, ödəniş və rəy sistemi
