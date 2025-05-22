@@ -358,7 +358,7 @@ def setup_database():
             ('Kondisioner ustası', 'Kondisioner sistemləri ilə bağlı xidmətlər'),
             ('Mebel ustası', 'Mebel quraşdırılması və təmiri xidmətləri'),
             ('Qapı-pəncərə ustası', 'Qapı və pəncərə sistemləri ilə bağlı xidmətlər'),
-            ('Bərpa ustası', 'Ev təmiri və bərpası xidmətləri'),
+            ('Təmir-bərpa ustası', 'Ev təmiri və bərpası xidmətləri'),
             ('Bağban', 'Bağ və həyət işləri ilə bağlı xidmətlər')
         ]
         
@@ -472,7 +472,7 @@ def setup_database():
         if 'Qapı-pəncərə ustası' in service_ids:
             qapi_pencere_subservices = [
                 ('PVC pəncərə quraşdırılması', 'PVC pəncərələrin quraşdırılması və nizamlanması'),
-                ('Taxta qapı təmiri', 'Taxta qapıların təmiri və bərpası'),
+                ('Qapı təmiri', 'Qapıların təmiri və bərpası'),
                 ('Alüminium sistemlər', 'Alüminium qapı və pəncərələrin quraşdırılması'),
                 ('Kilid və mexanizmlərin təmiri', 'Qapı kilidləri və mexanizmlərinin təmiri və dəyişdirilməsi')
             ]
@@ -486,8 +486,8 @@ def setup_database():
                 except Error as e:
                     print(f"Error inserting subservice {name}: {e}")
         
-        # Bərpa ustası subservices
-        if 'Bərpa ustası' in service_ids:
+        # Təmir-bərpa ustası subservices
+        if 'Təmir-bərpa ustası' in service_ids:
             berpa_subservices = [
                 ('Ev təmiri', 'Evlərin ümumi təmiri və yenilənməsi'),
                 ('Divar kağızı (oboy) vurulması', 'Divar kağızlarının vurulması və hazırlıq işləri'),
@@ -500,7 +500,7 @@ def setup_database():
                 try:
                     cursor.execute(
                         "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
-                        (service_ids['Bərpa ustası'], name, desc)
+                        (service_ids['Təmir-bərpa ustası'], name, desc)
                     )
                 except Error as e:
                     print(f"Error inserting subservice {name}: {e}")

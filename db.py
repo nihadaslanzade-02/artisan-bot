@@ -292,7 +292,8 @@ def get_artisan_by_id(artisan_id):
     """
     query = """
         SELECT id, name, phone, service, location, city, 
-               latitude, longitude, rating, active, created_at, telegram_id 
+               latitude, longitude, rating, active, created_at, telegram_id,
+               id_card_image_id
         FROM artisans 
         WHERE id = %s
     """

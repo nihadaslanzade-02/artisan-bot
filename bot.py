@@ -1236,7 +1236,7 @@ async def show_customers_list(message):
     except Exception as e:
         logger.error(f"Error in show_customers_list: {e}")
         await message.answer("❌ Müştərilər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-        
+
 async def show_artisans_list(message):
     """Show list of artisans"""
     try:
@@ -1309,6 +1309,11 @@ async def show_artisans_list(message):
             keyboard.add(
                 InlineKeyboardButton("📋 Sifarişləri", callback_data=f"artisan_orders_{artisan['id']}"),
                 InlineKeyboardButton("📞 Əlaqə saxla", callback_data=f"contact_artisan_{artisan['id']}")
+            )
+            
+            # Şəxsiyyət vəsiqəsi şəklini görmək üçün düymə əlavə edirik
+            keyboard.add(
+                InlineKeyboardButton("🪪 Şəxsiyyət vəsiqəsi", callback_data=f"view_id_card_{artisan['id']}")
             )
             
             # Add block/unblock button based on current status
@@ -1560,6 +1565,11 @@ async def search_artisans(message, query):
             keyboard.add(
                 InlineKeyboardButton("📋 Sifarişləri", callback_data=f"artisan_orders_{artisan['id']}"),
                 InlineKeyboardButton("📞 Əlaqə saxla", callback_data=f"contact_artisan_{artisan['id']}")
+            )
+            
+            # Şəxsiyyət vəsiqəsi şəklini görmək üçün düymə əlavə edirik
+            keyboard.add(
+                InlineKeyboardButton("🪪 Şəxsiyyət vəsiqəsi", callback_data=f"view_id_card_{artisan['id']}")
             )
             
             # Add block/unblock button based on current status
@@ -2559,6 +2569,52 @@ async def process_refund_reason(message: types.Message, state: FSMContext):
         logger.error(f"Error in process_refund_reason: {e}")
         await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
         await state.finish()
+import html
+@dp.callback_query_handler(lambda c: c.data.startswith('view_id_card_'))
+async def view_id_card_handler(callback_query: types.CallbackQuery):
+    """Handle viewing artisan's ID card image"""
+    try:
+        if not is_admin(callback_query.from_user.id):
+            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
+            return
+        
+        # Parse artisan ID
+        artisan_id = int(callback_query.data.split('_')[-1])
+        
+        # Get artisan details including ID card image
+        from db import get_artisan_by_id
+        artisan = get_artisan_by_id(artisan_id)
+        
+        if not artisan:
+            await callback_query.message.answer(f"❌ Usta {artisan_id} tapılmadı.")
+            await callback_query.answer()
+            return
+        
+        # Check if ID card image exists
+        id_card_image_id = artisan.get('id_card_image_id')
+        
+        if not id_card_image_id:
+            await callback_query.message.answer(f"❌ Usta {artisan_id} üçün şəxsiyyət vəsiqəsi şəkli yoxdur.")
+            await callback_query.answer()
+            return
+        
+        # Get masked name for privacy
+        from db_encryption_wrapper import wrap_get_dict_function
+        masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=True)(artisan_id)
+        masked_name = masked_artisan.get('name', f'Usta {artisan_id}')
+        
+        # Send the ID card image
+        await callback_query.message.answer_photo(
+            photo=id_card_image_id,
+            caption=f"🪪 *Şəxsiyyət vəsiqəsi*\n{html.escape(masked_name)} (ID: {artisan_id})",
+            parse_mode="HTML"
+        )
+        
+        await callback_query.answer()
+    except Exception as e:
+        logger.error(f"Error in view_id_card_handler: {e}")
+        await callback_query.message.answer("❌ Şəxsiyyət vəsiqəsi şəklini yükləyərkən xəta baş verdi.")
+        await callback_query.answer()
 
 # Register all handlers
 def register_all_handlers():
@@ -2606,6 +2662,7 @@ def register_all_handlers():
     dp.register_message_handler(process_refund_reason, state=AdminRefundState.waiting_for_reason)
     dp.register_callback_query_handler(decline_refund, lambda c: c.data.startswith('decline_refund_'))
     dp.register_callback_query_handler(mark_refund_completed, lambda c: c.data.startswith('refund_completed_'))
+    dp.register_callback_query_handler(view_id_card_handler, lambda c: c.data.startswith('view_id_card_'))
     
     logger.info("All handlers registered successfully!")
 

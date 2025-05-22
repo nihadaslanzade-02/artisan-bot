@@ -37,6 +37,7 @@ class ArtisanRegistrationStates(StatesGroup):
     entering_city = State()
     selecting_service = State()
     sharing_location = State()
+    id_card_upload = State()  # Add new state for ID card upload
     confirming_registration = State()
 
 # Define states for managing orders
@@ -211,14 +212,19 @@ def register_handlers(dp):
                 "✅ Təşəkkür edirik! Şərtləri qəbul etdiniz."
             )
             
-            # Qəbul etdikdən sonra qeydiyyata başlamaq üçün düymə göstər
-            keyboard = InlineKeyboardMarkup(row_width=1)
+            # Şəxsiyyət vəsiqəsi şəklini tələb etmək üçün düymələr göstər
+            keyboard = InlineKeyboardMarkup(row_width=2)
             keyboard.add(
-                InlineKeyboardButton("✅ Qeydiyyatı tamamla", callback_data="continue_artisan_registration")
+                InlineKeyboardButton("✅ Şəkili göndərməyi qəbul edirəm", callback_data="accept_id_upload"),
+                InlineKeyboardButton("❌ Qəbul etmirəm", callback_data="decline_id_upload")
             )
             
             await callback_query.message.answer(
-                "Qeydiyyatı tamamlamaq üçün aşağıdakı düyməni klikləyin:",
+                "📄 *Şəxsiyyət vəsiqəsi tələb olunur*\n\n"
+                "Usta qeydiyyatından keçmək üçün şəxsiyyət vəsiqənizin ön hissəsinin aydın şəklini göndərməlisiniz.\n\n"
+                "Bu, platformanın təhlükəsizliyini təmin etmək və ustalarin kimliyini təsdiq etmək üçün vacibdir.\n\n"
+                "Qeydiyyata davam etmək istəyirsiniz?",
+                parse_mode="Markdown",
                 reply_markup=keyboard
             )
             
@@ -232,20 +238,121 @@ def register_handlers(dp):
             await callback_query.answer()
 
     # Qeydiyyata davam etmə prosesi üçün yeni handler
-    @dp.callback_query_handler(lambda c: c.data == "continue_artisan_registration")
-    async def continue_artisan_registration(callback_query: types.CallbackQuery, state: FSMContext):
-        """Continue artisan registration after confirmation"""
+    @dp.callback_query_handler(lambda c: c.data == "accept_id_upload")
+    async def accept_id_upload(callback_query: types.CallbackQuery, state: FSMContext):
+        """Handle acceptance to upload ID card"""
         try:
-            # Qeydiyyat prosesinə keçid
-            await start_registration(callback_query.message, state)
+            # Create keyboard with cancel option
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            keyboard.add(KeyboardButton("❌ Ləğv et"))
+            
+            await callback_query.message.answer(
+                "📸 *Şəxsiyyət vəsiqəsinin şəkli*\n\n"
+                "Zəhmət olmasa, şəxsiyyət vəsiqənizin ön hissəsinin aydın şəklini göndərin.\n\n"
+                "⚠️ Məlumatların aydın görünməsi vacibdir.\n"
+                "⚠️ Yalnız ön hissənin şəklini göndərin.",
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            
+            # Set state to waiting for ID card upload
+            await ArtisanRegistrationStates.id_card_upload.set()
             await callback_query.answer()
+            
         except Exception as e:
-            logger.error(f"Error in continue_artisan_registration: {e}")
+            logger.error(f"Error in accept_id_upload: {e}")
             await callback_query.message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
             await state.finish()
             await show_role_selection(callback_query.message)
+            
+    @dp.callback_query_handler(lambda c: c.data == "decline_id_upload")
+    async def decline_id_upload(callback_query: types.CallbackQuery, state: FSMContext):
+        """Handle decline to upload ID card"""
+        try:
+            await callback_query.message.answer(
+                "❌ Şəxsiyyət vəsiqəsi şəklini göndərməkdən imtina etdiniz.\n\n"
+                "Usta qeydiyyatı tamamlanmadı. Əsas menyuya qayıdırsınız.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            
+            # Return to role selection
+            await state.finish()
+            await show_role_selection(callback_query.message)
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in decline_id_upload: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(callback_query.message)
+            
+    @dp.message_handler(content_types=types.ContentType.PHOTO, state=ArtisanRegistrationStates.id_card_upload)
+    async def process_id_card_photo(message: types.Message, state: FSMContext):
+        """Process ID card photo upload"""
+        try:
+            # Get the highest quality photo
+            photo = message.photo[-1]
+            file_id = photo.file_id
+            
+            # Save file_id in state
+            async with state.proxy() as data:
+                data['id_card_image_id'] = file_id
+            
+            await message.answer(
+                "✅ Şəxsiyyət vəsiqənizin şəkli uğurla yükləndi!\n\n"
+                "İndi qeydiyyat prosesinə davam edə bilərsiniz.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            
+            # Continue with registration
+            await continue_artisan_registration(message, state)
+            
+        except Exception as e:
+            logger.error(f"Error in process_id_card_photo: {e}")
+            await message.answer(
+                "❌ Şəkil yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
+            
+    @dp.message_handler(lambda message: message.text == "❌ Ləğv et", state=ArtisanRegistrationStates.id_card_upload)
+    async def cancel_id_upload(message: types.Message, state: FSMContext):
+        """Cancel ID card upload process"""
+        try:
+            await message.answer(
+                "❌ Şəxsiyyət vəsiqəsi şəklini göndərmə prosesi ləğv edildi.\n\n"
+                "Usta qeydiyyatı tamamlanmadı. Əsas menyuya qayıdırsınız.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            
+            # Return to role selection
+            await state.finish()
+            await show_role_selection(message)
+            
+        except Exception as e:
+            logger.error(f"Error in cancel_id_upload: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
+    
+    async def continue_artisan_registration(message: types.Message, state: FSMContext):
+        """Continue artisan registration after ID card upload"""
+        try:
+            # Start the registration process
+            await start_registration(message, state)
+        except Exception as e:
+            logger.error(f"Error in continue_artisan_registration: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
 
     @dp.callback_query_handler(lambda c: c.data == "decline_artisan_agreement")
     async def decline_artisan_agreement(callback_query: types.CallbackQuery, state: FSMContext):
@@ -622,6 +729,7 @@ def register_handlers(dp):
             latitude = data.get('latitude')
             longitude = data.get('longitude')
             location_name = data.get('location_name', city)
+            id_card_image_id = data.get('id_card_image_id')  # Get ID card image file ID
             
             # Default values for address and card info
             default_card_number = ''  # Empty string, not NULL
@@ -660,10 +768,11 @@ def register_handlers(dp):
                     SET payment_card_number = %s, 
                         payment_card_holder = %s,
                         address = %s,
+                        id_card_image_id = %s,
                         profile_complete = TRUE
                     WHERE id = %s
                     """,
-                    (default_card_number, default_card_holder, default_address, artisan_id)
+                    (default_card_number, default_card_holder, default_address, id_card_image_id, artisan_id)
                 )
                 conn.commit()
                 conn.close()
@@ -698,10 +807,11 @@ def register_handlers(dp):
                     SET payment_card_number = %s, 
                         payment_card_holder = %s,
                         address = %s,
+                        id_card_image_id = %s,
                         profile_complete = TRUE
                     WHERE id = %s
                     """,
-                    (default_card_number, default_card_holder, default_address, artisan_id)
+                    (default_card_number, default_card_holder, default_address, id_card_image_id, artisan_id)
                 )
                 conn.commit()
                 conn.close()
@@ -4224,7 +4334,7 @@ def register_handlers(dp):
             artisans = get_nearby_artisans(
                 latitude=order['latitude'], 
                 longitude=order['longitude'],
-                radius=10, 
+                radius=1, 
                 service=order['service'],
                 subservice=order.get('subservice')
             )
@@ -4258,7 +4368,7 @@ def register_handlers(dp):
                 artisans = get_nearby_artisans(
                     latitude=order['latitude'], 
                     longitude=order['longitude'],
-                    radius=25,  # Increased radius
+                    radius=5,  # Increased radius
                     service=order['service'],
                     subservice=order.get('subservice')
                 )

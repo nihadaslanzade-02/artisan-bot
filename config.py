@@ -55,7 +55,7 @@ BOT_ADMINS = [1246396928]  # Telegram User IDs of admins
 
 # Support Contact Information
 SUPPORT_EMAIL = "techrep.support@gmail.com"
-SUPPORT_PHONE = "+994506606351"  # Support contact phone
+SUPPORT_PHONE = "+994516643082"  # Support contact phone
 
 # Location Settings
 DEFAULT_SEARCH_RADIUS = 10  # km - Default radius for searching nearby artisans
