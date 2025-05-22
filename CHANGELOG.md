@@ -23,3 +23,15 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 - Increasing searching radius for nearby artisans
 - Correctly decrypting artisan name and phone in searching nearby artisans
 - Making accessible order_from_artisan function for customers not only for admins
+
+## [v1.1.0] – 2025-05-23
+### Changed
+- bot name and logo changed,
+- service name of 'Bərpa ustası' changed to 'Təmir-bərpa ustası',
+- subservice name of 'Taxta qapı təmiri' to 'Qapı təmiri',
+- support phone number changed
+
+### Added
+- added a new service titled 'Məişət Texnikası və Elektronika',
+- added a functionality for artisans to add their id photo in initial registration,
+- added a functionality for admin panel to see the id photos of artisans
