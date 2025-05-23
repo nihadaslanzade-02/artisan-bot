@@ -19,15 +19,15 @@ logger = logging.getLogger(__name__)
 async def notify_artisan_about_new_order(order_id, artisan_id):
     """Ustaya yeni sipariş hakkında bildirim gönderir"""
     try:
-        # Usta bilgilerini doğru almak için düzeltme
-        artisan = get_masked_artisan_by_id(artisan_id)
+        # Use the non-masked version to get the correct telegram_id
+        artisan = get_artisan_by_id(artisan_id)
         order = get_order_details(order_id)
         
         if not artisan or not order:
             logger.error(f"Artisan or order not found. Artisan ID: {artisan_id}, Order ID: {order_id}")
             return False
         
-        # Telegram ID'yi doğrudan kullanmak yerine dict'ten alıyoruz
+        # Get telegram_id directly
         telegram_id = artisan.get('telegram_id')
         if not telegram_id:
             logger.error(f"Artisan telegram_id not found for artisan ID: {artisan_id}")

@@ -1007,46 +1007,25 @@ def register_handlers(dp):
                 # Ustalara toplu bildirim gönder - En az birkaç ustaya bildirim gönderebildiğimizi loglayalım
                 notification_sent = 0
                 
+                # Use the notification_service instead of direct messages
+                from notification_service import notify_artisan_about_new_order
+                
                 for artisan in artisans:
                     # Ustanın tipini ve bilgilerini doğru şekilde çıkart
                     if isinstance(artisan, dict):
                         artisan_id = artisan.get('id')
-                        artisan_telegram_id = artisan.get('telegram_id')
                     else:  # It's a tuple
                         artisan_id = artisan[0]
-                        artisan_telegram_id = None
-                        # Telegram ID'sini bulmak için veritabanına sorgula
-                        artisan_details = get_artisan_by_id(artisan_id)
-                        if artisan_details:
-                            artisan_telegram_id = artisan_details.get('telegram_id')
                     
-                    if artisan_telegram_id:
+                    if artisan_id:
                         try:
-                            # Daha dikkat çekici bildirim için klavye oluştur
-                            keyboard = InlineKeyboardMarkup(row_width=1)
-                            keyboard.add(
-                                InlineKeyboardButton("✅ Sifarişi qəbul et", callback_data=f"accept_order_{order_id}"),
-                                InlineKeyboardButton("❌ Sifarişi rədd et", callback_data=f"reject_order_{order_id}")
-                            )
-                            
-                            # Sipariş bilgilerini içeren mesaj metni
-                            message_text = (
-                                f"🔔 *YENİ SİFARİŞ!*\n\n"
-                                f"Sifariş #{order_id}\n"
-                                f"Xidmət: {service}\n"
-                                f"Alt xidmət: {data.get('subservice', 'Təyin edilməyib')}\n"
-                                f"Qeyd: {data['note']}\n\n"
-                                f"⏱ Bu sifariş 60 saniyə ərzində mövcuddur!"
-                            )
-                            
-                            await bot.send_message(
-                                chat_id=artisan_telegram_id,
-                                text=message_text,
-                                reply_markup=keyboard,
-                                parse_mode="Markdown"
-                            )
-                            notification_sent += 1
-                            logger.info(f"Notification sent to artisan {artisan_id} for order {order_id}")
+                            # Use notification service function instead of direct message
+                            success = await notify_artisan_about_new_order(order_id, artisan_id)
+                            if success:
+                                notification_sent += 1
+                                logger.info(f"Notification sent to artisan {artisan_id} for order {order_id}")
+                            else:
+                                logger.error(f"Failed to notify artisan {artisan_id}")
                         except Exception as e:
                             logger.error(f"Failed to notify artisan {artisan_id}: {e}")
                 
