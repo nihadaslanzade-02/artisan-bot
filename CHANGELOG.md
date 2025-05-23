@@ -35,3 +35,7 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 - added a new service titled 'Məişət Texnikası və Elektronika',
 - added a functionality for artisans to add their id photo in initial registration,
 - added a functionality for admin panel to see the id photos of artisans
+
+## [v1.1.1] – 2025-05-23
+### Fixed
+- When a customer gives an order the notification to nearby artisans fixed.
