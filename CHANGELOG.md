@@ -39,3 +39,11 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 ## [v1.1.1] – 2025-05-23
 ### Fixed
 - When a customer gives an order the notification to nearby artisans fixed.
+
+## [v1.1.2] – 2025-05-24
+### Added
+- Verifying the id photo of artisan functionality to admin panel
+- Restrictions for artisans while they are not verified
+
+### Changed
+- Warning note to the text of naming for artisans in initial registration where it is written that the name and surname must be same with the id
