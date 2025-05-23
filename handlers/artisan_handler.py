@@ -404,7 +404,8 @@ def register_handlers(dp):
             
             await message.answer(
                 f"👤 Telegram hesabınızda göstərilən adınız: *{full_name}*\n\n"
-                "Bu addan istifadə etmək istəyirsiniz?",
+                "Bu addan istifadə etmək istəyirsiniz?\n\n"
+                "*Qeyd: İstifadəçi adınız mütləq şəkildə şəxsiyyət vəsiqəsindəki ad və soyadınızla eyni olmalıdır!*",
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
@@ -760,6 +761,7 @@ def register_handlers(dp):
                 })
                 
                 # Add default card info (to avoid nulls)
+                # Update with ID verification requirements
                 conn = get_connection()
                 cursor = conn.cursor()
                 cursor.execute(
@@ -769,7 +771,9 @@ def register_handlers(dp):
                         payment_card_holder = %s,
                         address = %s,
                         id_card_image_id = %s,
-                        profile_complete = TRUE
+                        profile_complete = TRUE,
+                        active = FALSE,
+                        id_verification_status = 'pending'
                     WHERE id = %s
                     """,
                     (default_card_number, default_card_holder, default_address, id_card_image_id, artisan_id)
@@ -808,7 +812,9 @@ def register_handlers(dp):
                         payment_card_holder = %s,
                         address = %s,
                         id_card_image_id = %s,
-                        profile_complete = TRUE
+                        profile_complete = TRUE,
+                        active = FALSE,
+                        id_verification_status = 'pending'
                     WHERE id = %s
                     """,
                     (default_card_number, default_card_holder, default_address, id_card_image_id, artisan_id)
@@ -822,11 +828,15 @@ def register_handlers(dp):
                 except Exception as e:
                     logger.error(f"Error setting initial context: {e}")
                 
-                # Show welcome message
+                # Show welcome message with verification info
                 await callback_query.message.answer(
                     "✅ *Qeydiyyatınız uğurla tamamlandı!*\n\n"
-                    "Siz artıq rəsmi olaraq usta hesabınızı yaratdınız. İndi xidmət növünüzə uyğun "
-                    "alt xidmətləri və qiymət aralıqlarını təyin etməlisiniz.",
+                    "📋 *Növbəti addımlar:*\n"
+                    "• Şəxsiyyət vəsiqəniz admin tərəfindən yoxlanılacaq\n"
+                    "• Təsdiqləndikdən sonra hesabınız aktiv ediləcək\n"
+                    "• Bu müddətdə qiymət aralıqlarınızı təyin edə bilərsiniz\n\n"
+                    "⏳ Təsdiq prosesi adətən 24 saat ərzində tamamlanır.\n\n"
+                    "Təsdiq olunana qədər sifarişlər qəbul edə bilməyəcəksiniz.",
                     parse_mode="Markdown",
                     reply_markup=types.ReplyKeyboardRemove()
                 )
@@ -849,8 +859,9 @@ def register_handlers(dp):
                     
                     await callback_query.message.answer(
                         "💰 *Qiymət aralıqlarını təyin edin*\n\n"
-                        "Xidmət növünüzə uyğun qiymət aralıqlarını təyin etmək üçün "
-                        "zəhmət olmasa, aşağıdakı alt xidmətlərdən birini seçin:",
+                        "Təsdiq gözləyərkən qiymət aralıqlarınızı təyin edə bilərsiniz.\n"
+                        "Bu, hesabınız aktiv olduqda hazır olmanıza kömək edəcək:\n\n"
+                        "*QEYD: Unutmayın ki, sifarişlər üçün qiymət təyini zamanı burada qeyd edəcəyiniz intervallardan kənara çıxa bilməyəcəksiniz.*",
                         reply_markup=keyboard,
                         parse_mode="Markdown"
                     )
@@ -869,8 +880,10 @@ def register_handlers(dp):
                     keyboard.add(KeyboardButton("🔄 Rol seçiminə qayıt"))
                     
                     await callback_query.message.answer(
-                        "👷‍♂️ *Usta Paneli*\n\n"
-                        "Aşağıdakı əməliyyatlardan birini seçin:",
+                        "👷‍♂️ *Usta Paneli (Gözləmə Rejimi)*\n\n"
+                        "⚠️ Hesabınız hələ də admin təsdiqi gözləyir.\n"
+                        "Təsdiqlənəndən sonra sifarişlər qəbul edə biləcəksiniz.\n\n"
+                        "Bu müddətdə digər ayarlarınızı hazırlaya bilərsiniz.",
                         reply_markup=keyboard,
                         parse_mode="Markdown"
                     )
@@ -1843,6 +1856,60 @@ def register_handlers(dp):
                 )
                 return
 
+
+
+            # !! DÜZƏLTMƏ: Birbaşa database-dən verification status-u oxuyaq !!
+            conn = get_connection()
+            cursor = conn.cursor()
+            
+            # Verification status-u ayrıca oxu
+            cursor.execute(
+                "SELECT id_verification_status FROM artisans WHERE id = %s",
+                (artisan_id,)
+            )
+            verification_result = cursor.fetchone()
+            
+            if not verification_result:
+                conn.close()
+                await message.answer(
+                    "❌ Profil məlumatları tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+                )
+                return
+            # Raw verification status
+            raw_verification_status = verification_result[0]
+            
+            # Debug log
+            logger.info(f"Raw verification status from DB for artisan {artisan_id}: '{raw_verification_status}' (type: {type(raw_verification_status)})")
+            
+            # Clean and normalize status
+            verification_status = str(raw_verification_status).strip().lower() if raw_verification_status else 'pending'
+            
+            logger.info(f"Cleaned verification status: '{verification_status}'")
+            
+            conn.close()
+            
+            # Check if artisan is verified - SECURITY CHECK  
+            if verification_status != 'verified':
+                await message.answer(
+                    f"⚠️ *Profil ayarlarına çıxış məhdudlaşdırılıb*\n\n"
+                    f"Şəxsiyyət vəsiqəniz hələ admin tərəfindən təsdiqlənməyib.\n"
+                    f"Hal-hazırki status: `{raw_verification_status}`\n"
+                    f"Təsdiq olunduqdan sonra profil ayarlarınızı dəyişə biləcəksiniz.\n\n"
+                    f"Hal-hazırda yalnız qiymət ayarlarınızı dəyişə bilərsiniz.",
+                    parse_mode="Markdown"
+                )
+                return
+            
+
+            # Get artisan details (after verification check passes)
+            artisan = get_artisan_by_id(artisan_id)
+            
+            if not artisan:
+                await message.answer(
+                    "❌ Profil məlumatları tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+                )
+                return
+        
             # Əlavə olaraq həssas sahələri əl ilə deşifrələməyə çalışın
             try:
                 from crypto_service import decrypt_data
@@ -1881,7 +1948,8 @@ def register_handlers(dp):
                 f"📍 *Yer:* {artisan['location']}\n"
                 f"⭐ *Reytinq:* {artisan['rating']:.1f}/5\n"
                 f"📅 *Qeydiyyat tarixi:* {artisan['created_at'].strftime('%d.%m.%Y')}\n"
-                f"🔄 *Status:* {'Aktiv' if artisan['active'] else 'Qeyri-aktiv'}{blocked_info}"
+                f"🔄 *Status:* {'Aktiv' if artisan['active'] else 'Qeyri-aktiv'}{blocked_info}\n"
+                f"🆔 *Təsdiq statusu:* {verification_status}"
             )
             
             await message.answer(
