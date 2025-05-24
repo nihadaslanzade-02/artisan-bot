@@ -292,8 +292,7 @@ def get_artisan_by_id(artisan_id):
     """
     query = """
         SELECT id, name, phone, service, location, city, 
-               latitude, longitude, rating, active, created_at, telegram_id,
-               id_card_image_id
+               latitude, longitude, rating, active, created_at, telegram_id 
         FROM artisans 
         WHERE id = %s
     """
@@ -376,8 +375,8 @@ def create_artisan(telegram_id, name, phone, service, location=None, city=None, 
 
     query = """
         INSERT INTO artisans (telegram_id, telegram_id_hash, name, phone, service, location, city, 
-                              latitude, longitude, active, id_verification_status, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, 'pending', NOW())
+                              latitude, longitude, active, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW())
     """
     
     conn = None

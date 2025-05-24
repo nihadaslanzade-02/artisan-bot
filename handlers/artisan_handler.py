@@ -37,7 +37,6 @@ class ArtisanRegistrationStates(StatesGroup):
     entering_city = State()
     selecting_service = State()
     sharing_location = State()
-    id_card_upload = State()  # Add new state for ID card upload
     confirming_registration = State()
 
 # Define states for managing orders
@@ -212,19 +211,14 @@ def register_handlers(dp):
                 "✅ Təşəkkür edirik! Şərtləri qəbul etdiniz."
             )
             
-            # Şəxsiyyət vəsiqəsi şəklini tələb etmək üçün düymələr göstər
-            keyboard = InlineKeyboardMarkup(row_width=2)
+            # Qəbul etdikdən sonra qeydiyyata başlamaq üçün düymə göstər
+            keyboard = InlineKeyboardMarkup(row_width=1)
             keyboard.add(
-                InlineKeyboardButton("✅ Şəkili göndərməyi qəbul edirəm", callback_data="accept_id_upload"),
-                InlineKeyboardButton("❌ Qəbul etmirəm", callback_data="decline_id_upload")
+                InlineKeyboardButton("✅ Qeydiyyatı tamamla", callback_data="continue_artisan_registration")
             )
             
             await callback_query.message.answer(
-                "📄 *Şəxsiyyət vəsiqəsi tələb olunur*\n\n"
-                "Usta qeydiyyatından keçmək üçün şəxsiyyət vəsiqənizin ön hissəsinin aydın şəklini göndərməlisiniz.\n\n"
-                "Bu, platformanın təhlükəsizliyini təmin etmək və ustalarin kimliyini təsdiq etmək üçün vacibdir.\n\n"
-                "Qeydiyyata davam etmək istəyirsiniz?",
-                parse_mode="Markdown",
+                "Qeydiyyatı tamamlamaq üçün aşağıdakı düyməni klikləyin:",
                 reply_markup=keyboard
             )
             
@@ -238,121 +232,20 @@ def register_handlers(dp):
             await callback_query.answer()
 
     # Qeydiyyata davam etmə prosesi üçün yeni handler
-    @dp.callback_query_handler(lambda c: c.data == "accept_id_upload")
-    async def accept_id_upload(callback_query: types.CallbackQuery, state: FSMContext):
-        """Handle acceptance to upload ID card"""
+    @dp.callback_query_handler(lambda c: c.data == "continue_artisan_registration")
+    async def continue_artisan_registration(callback_query: types.CallbackQuery, state: FSMContext):
+        """Continue artisan registration after confirmation"""
         try:
-            # Create keyboard with cancel option
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            keyboard.add(KeyboardButton("❌ Ləğv et"))
-            
-            await callback_query.message.answer(
-                "📸 *Şəxsiyyət vəsiqəsinin şəkli*\n\n"
-                "Zəhmət olmasa, şəxsiyyət vəsiqənizin ön hissəsinin aydın şəklini göndərin.\n\n"
-                "⚠️ Məlumatların aydın görünməsi vacibdir.\n"
-                "⚠️ Yalnız ön hissənin şəklini göndərin.",
-                parse_mode="Markdown",
-                reply_markup=keyboard
-            )
-            
-            # Set state to waiting for ID card upload
-            await ArtisanRegistrationStates.id_card_upload.set()
+            # Qeydiyyat prosesinə keçid
+            await start_registration(callback_query.message, state)
             await callback_query.answer()
-            
-        except Exception as e:
-            logger.error(f"Error in accept_id_upload: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_role_selection(callback_query.message)
-            
-    @dp.callback_query_handler(lambda c: c.data == "decline_id_upload")
-    async def decline_id_upload(callback_query: types.CallbackQuery, state: FSMContext):
-        """Handle decline to upload ID card"""
-        try:
-            await callback_query.message.answer(
-                "❌ Şəxsiyyət vəsiqəsi şəklini göndərməkdən imtina etdiniz.\n\n"
-                "Usta qeydiyyatı tamamlanmadı. Əsas menyuya qayıdırsınız.",
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            
-            # Return to role selection
-            await state.finish()
-            await show_role_selection(callback_query.message)
-            await callback_query.answer()
-            
-        except Exception as e:
-            logger.error(f"Error in decline_id_upload: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_role_selection(callback_query.message)
-            
-    @dp.message_handler(content_types=types.ContentType.PHOTO, state=ArtisanRegistrationStates.id_card_upload)
-    async def process_id_card_photo(message: types.Message, state: FSMContext):
-        """Process ID card photo upload"""
-        try:
-            # Get the highest quality photo
-            photo = message.photo[-1]
-            file_id = photo.file_id
-            
-            # Save file_id in state
-            async with state.proxy() as data:
-                data['id_card_image_id'] = file_id
-            
-            await message.answer(
-                "✅ Şəxsiyyət vəsiqənizin şəkli uğurla yükləndi!\n\n"
-                "İndi qeydiyyat prosesinə davam edə bilərsiniz.",
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            
-            # Continue with registration
-            await continue_artisan_registration(message, state)
-            
-        except Exception as e:
-            logger.error(f"Error in process_id_card_photo: {e}")
-            await message.answer(
-                "❌ Şəkil yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_role_selection(message)
-            
-    @dp.message_handler(lambda message: message.text == "❌ Ləğv et", state=ArtisanRegistrationStates.id_card_upload)
-    async def cancel_id_upload(message: types.Message, state: FSMContext):
-        """Cancel ID card upload process"""
-        try:
-            await message.answer(
-                "❌ Şəxsiyyət vəsiqəsi şəklini göndərmə prosesi ləğv edildi.\n\n"
-                "Usta qeydiyyatı tamamlanmadı. Əsas menyuya qayıdırsınız.",
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            
-            # Return to role selection
-            await state.finish()
-            await show_role_selection(message)
-            
-        except Exception as e:
-            logger.error(f"Error in cancel_id_upload: {e}")
-            await message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_role_selection(message)
-    
-    async def continue_artisan_registration(message: types.Message, state: FSMContext):
-        """Continue artisan registration after ID card upload"""
-        try:
-            # Start the registration process
-            await start_registration(message, state)
         except Exception as e:
             logger.error(f"Error in continue_artisan_registration: {e}")
-            await message.answer(
+            await callback_query.message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
             await state.finish()
-            await show_role_selection(message)
+            await show_role_selection(callback_query.message)
 
     @dp.callback_query_handler(lambda c: c.data == "decline_artisan_agreement")
     async def decline_artisan_agreement(callback_query: types.CallbackQuery, state: FSMContext):
@@ -404,8 +297,7 @@ def register_handlers(dp):
             
             await message.answer(
                 f"👤 Telegram hesabınızda göstərilən adınız: *{full_name}*\n\n"
-                "Bu addan istifadə etmək istəyirsiniz?\n\n"
-                "*Qeyd: İstifadəçi adınız mütləq şəkildə şəxsiyyət vəsiqəsindəki ad və soyadınızla eyni olmalıdır!*",
+                "Bu addan istifadə etmək istəyirsiniz?",
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
@@ -730,7 +622,6 @@ def register_handlers(dp):
             latitude = data.get('latitude')
             longitude = data.get('longitude')
             location_name = data.get('location_name', city)
-            id_card_image_id = data.get('id_card_image_id')  # Get ID card image file ID
             
             # Default values for address and card info
             default_card_number = ''  # Empty string, not NULL
@@ -761,7 +652,6 @@ def register_handlers(dp):
                 })
                 
                 # Add default card info (to avoid nulls)
-                # Update with ID verification requirements
                 conn = get_connection()
                 cursor = conn.cursor()
                 cursor.execute(
@@ -770,13 +660,10 @@ def register_handlers(dp):
                     SET payment_card_number = %s, 
                         payment_card_holder = %s,
                         address = %s,
-                        id_card_image_id = %s,
-                        profile_complete = TRUE,
-                        active = FALSE,
-                        id_verification_status = 'pending'
+                        profile_complete = TRUE
                     WHERE id = %s
                     """,
-                    (default_card_number, default_card_holder, default_address, id_card_image_id, artisan_id)
+                    (default_card_number, default_card_holder, default_address, artisan_id)
                 )
                 conn.commit()
                 conn.close()
@@ -811,13 +698,10 @@ def register_handlers(dp):
                     SET payment_card_number = %s, 
                         payment_card_holder = %s,
                         address = %s,
-                        id_card_image_id = %s,
-                        profile_complete = TRUE,
-                        active = FALSE,
-                        id_verification_status = 'pending'
+                        profile_complete = TRUE
                     WHERE id = %s
                     """,
-                    (default_card_number, default_card_holder, default_address, id_card_image_id, artisan_id)
+                    (default_card_number, default_card_holder, default_address, artisan_id)
                 )
                 conn.commit()
                 conn.close()
@@ -828,15 +712,11 @@ def register_handlers(dp):
                 except Exception as e:
                     logger.error(f"Error setting initial context: {e}")
                 
-                # Show welcome message with verification info
+                # Show welcome message
                 await callback_query.message.answer(
                     "✅ *Qeydiyyatınız uğurla tamamlandı!*\n\n"
-                    "📋 *Növbəti addımlar:*\n"
-                    "• Şəxsiyyət vəsiqəniz admin tərəfindən yoxlanılacaq\n"
-                    "• Təsdiqləndikdən sonra hesabınız aktiv ediləcək\n"
-                    "• Bu müddətdə qiymət aralıqlarınızı təyin edə bilərsiniz\n\n"
-                    "⏳ Təsdiq prosesi adətən 24 saat ərzində tamamlanır.\n\n"
-                    "Təsdiq olunana qədər sifarişlər qəbul edə bilməyəcəksiniz.",
+                    "Siz artıq rəsmi olaraq usta hesabınızı yaratdınız. İndi xidmət növünüzə uyğun "
+                    "alt xidmətləri və qiymət aralıqlarını təyin etməlisiniz.",
                     parse_mode="Markdown",
                     reply_markup=types.ReplyKeyboardRemove()
                 )
@@ -859,9 +739,8 @@ def register_handlers(dp):
                     
                     await callback_query.message.answer(
                         "💰 *Qiymət aralıqlarını təyin edin*\n\n"
-                        "Təsdiq gözləyərkən qiymət aralıqlarınızı təyin edə bilərsiniz.\n"
-                        "Bu, hesabınız aktiv olduqda hazır olmanıza kömək edəcək:\n\n"
-                        "*QEYD: Unutmayın ki, sifarişlər üçün qiymət təyini zamanı burada qeyd edəcəyiniz intervallardan kənara çıxa bilməyəcəksiniz.*",
+                        "Xidmət növünüzə uyğun qiymət aralıqlarını təyin etmək üçün "
+                        "zəhmət olmasa, aşağıdakı alt xidmətlərdən birini seçin:",
                         reply_markup=keyboard,
                         parse_mode="Markdown"
                     )
@@ -880,10 +759,8 @@ def register_handlers(dp):
                     keyboard.add(KeyboardButton("🔄 Rol seçiminə qayıt"))
                     
                     await callback_query.message.answer(
-                        "👷‍♂️ *Usta Paneli (Gözləmə Rejimi)*\n\n"
-                        "⚠️ Hesabınız hələ də admin təsdiqi gözləyir.\n"
-                        "Təsdiqlənəndən sonra sifarişlər qəbul edə biləcəksiniz.\n\n"
-                        "Bu müddətdə digər ayarlarınızı hazırlaya bilərsiniz.",
+                        "👷‍♂️ *Usta Paneli*\n\n"
+                        "Aşağıdakı əməliyyatlardan birini seçin:",
                         reply_markup=keyboard,
                         parse_mode="Markdown"
                     )
@@ -1856,60 +1733,6 @@ def register_handlers(dp):
                 )
                 return
 
-
-
-            # !! DÜZƏLTMƏ: Birbaşa database-dən verification status-u oxuyaq !!
-            conn = get_connection()
-            cursor = conn.cursor()
-            
-            # Verification status-u ayrıca oxu
-            cursor.execute(
-                "SELECT id_verification_status FROM artisans WHERE id = %s",
-                (artisan_id,)
-            )
-            verification_result = cursor.fetchone()
-            
-            if not verification_result:
-                conn.close()
-                await message.answer(
-                    "❌ Profil məlumatları tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-                )
-                return
-            # Raw verification status
-            raw_verification_status = verification_result[0]
-            
-            # Debug log
-            logger.info(f"Raw verification status from DB for artisan {artisan_id}: '{raw_verification_status}' (type: {type(raw_verification_status)})")
-            
-            # Clean and normalize status
-            verification_status = str(raw_verification_status).strip().lower() if raw_verification_status else 'pending'
-            
-            logger.info(f"Cleaned verification status: '{verification_status}'")
-            
-            conn.close()
-            
-            # Check if artisan is verified - SECURITY CHECK  
-            if verification_status != 'verified':
-                await message.answer(
-                    f"⚠️ *Profil ayarlarına çıxış məhdudlaşdırılıb*\n\n"
-                    f"Şəxsiyyət vəsiqəniz hələ admin tərəfindən təsdiqlənməyib.\n"
-                    f"Hal-hazırki status: `{raw_verification_status}`\n"
-                    f"Təsdiq olunduqdan sonra profil ayarlarınızı dəyişə biləcəksiniz.\n\n"
-                    f"Hal-hazırda yalnız qiymət ayarlarınızı dəyişə bilərsiniz.",
-                    parse_mode="Markdown"
-                )
-                return
-            
-
-            # Get artisan details (after verification check passes)
-            artisan = get_artisan_by_id(artisan_id)
-            
-            if not artisan:
-                await message.answer(
-                    "❌ Profil məlumatları tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-                )
-                return
-        
             # Əlavə olaraq həssas sahələri əl ilə deşifrələməyə çalışın
             try:
                 from crypto_service import decrypt_data
@@ -1948,8 +1771,7 @@ def register_handlers(dp):
                 f"📍 *Yer:* {artisan['location']}\n"
                 f"⭐ *Reytinq:* {artisan['rating']:.1f}/5\n"
                 f"📅 *Qeydiyyat tarixi:* {artisan['created_at'].strftime('%d.%m.%Y')}\n"
-                f"🔄 *Status:* {'Aktiv' if artisan['active'] else 'Qeyri-aktiv'}{blocked_info}\n"
-                f"🆔 *Təsdiq statusu:* {verification_status}"
+                f"🔄 *Status:* {'Aktiv' if artisan['active'] else 'Qeyri-aktiv'}{blocked_info}"
             )
             
             await message.answer(
@@ -4402,7 +4224,7 @@ def register_handlers(dp):
             artisans = get_nearby_artisans(
                 latitude=order['latitude'], 
                 longitude=order['longitude'],
-                radius=1, 
+                radius=10, 
                 service=order['service'],
                 subservice=order.get('subservice')
             )
@@ -4436,7 +4258,7 @@ def register_handlers(dp):
                 artisans = get_nearby_artisans(
                     latitude=order['latitude'], 
                     longitude=order['longitude'],
-                    radius=5,  # Increased radius
+                    radius=25,  # Increased radius
                     service=order['service'],
                     subservice=order.get('subservice')
                 )

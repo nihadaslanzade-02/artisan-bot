@@ -93,22 +93,15 @@ def setup_database():
                 latitude DOUBLE,
                 longitude DOUBLE,
                 rating DECIMAL(2,1) DEFAULT 0,
-                active TINYINT(1) DEFAULT 0,
+                active TINYINT(1) DEFAULT 1,
                 blocked TINYINT(1) DEFAULT 0,
                 block_reason TEXT,
                 block_time DATETIME,
                 payment_card_number TEXT,
                 payment_card_holder TEXT,
                 profile_complete TINYINT(1) DEFAULT 0,
-                id_card_image_id TEXT,
-                id_verification_status ENUM('pending', 'verified', 'rejected') DEFAULT 'pending',
-                verified_by INT NULL,
-                verified_at DATETIME NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX idx_artisans_verification (id_verification_status),
-                INDEX idx_artisans_active (active),
-                INDEX idx_artisans_service (service(20))
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
@@ -246,23 +239,6 @@ def setup_database():
                 FOREIGN KEY (subservice_id) REFERENCES subservices(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
-        # Admin actions log table for tracking ID verifications
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS admin_actions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                admin_id BIGINT NOT NULL,
-                action_type VARCHAR(50) NOT NULL,
-                target_id INT NOT NULL,
-                target_type VARCHAR(20) NOT NULL,
-                old_value TEXT,
-                new_value TEXT,
-                details TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_admin_actions_admin (admin_id),
-                INDEX idx_admin_actions_target (target_id, target_type),
-                INDEX idx_admin_actions_type (action_type)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ''')
         
         # Order payments table
         cursor.execute('''
@@ -382,7 +358,7 @@ def setup_database():
             ('Kondisioner ustası', 'Kondisioner sistemləri ilə bağlı xidmətlər'),
             ('Mebel ustası', 'Mebel quraşdırılması və təmiri xidmətləri'),
             ('Qapı-pəncərə ustası', 'Qapı və pəncərə sistemləri ilə bağlı xidmətlər'),
-            ('Bərpa ustası', 'Ev təmiri və bərpası xidmətləri'),
+            ('Təmir-bərpa ustası', 'Ev təmiri və bərpası xidmətləri'),
             ('Bağban', 'Bağ və həyət işləri ilə bağlı xidmətlər')
         ]
         
@@ -496,7 +472,7 @@ def setup_database():
         if 'Qapı-pəncərə ustası' in service_ids:
             qapi_pencere_subservices = [
                 ('PVC pəncərə quraşdırılması', 'PVC pəncərələrin quraşdırılması və nizamlanması'),
-                ('Taxta qapı təmiri', 'Taxta qapıların təmiri və bərpası'),
+                ('Qapı təmiri', 'Qapıların təmiri və bərpası'),
                 ('Alüminium sistemlər', 'Alüminium qapı və pəncərələrin quraşdırılması'),
                 ('Kilid və mexanizmlərin təmiri', 'Qapı kilidləri və mexanizmlərinin təmiri və dəyişdirilməsi')
             ]
@@ -511,7 +487,7 @@ def setup_database():
                     print(f"Error inserting subservice {name}: {e}")
         
         # Bərpa ustası subservices
-        if 'Bərpa ustası' in service_ids:
+        if 'Təmir-bərpa ustası' in service_ids:
             berpa_subservices = [
                 ('Ev təmiri', 'Evlərin ümumi təmiri və yenilənməsi'),
                 ('Divar kağızı (oboy) vurulması', 'Divar kağızlarının vurulması və hazırlıq işləri'),
@@ -524,7 +500,7 @@ def setup_database():
                 try:
                     cursor.execute(
                         "INSERT IGNORE INTO subservices (service_id, name, description) VALUES (%s, %s, %s)",
-                        (service_ids['Bərpa ustası'], name, desc)
+                        (service_ids['Təmir-bərpa ustası'], name, desc)
                     )
                 except Error as e:
                     print(f"Error inserting subservice {name}: {e}")

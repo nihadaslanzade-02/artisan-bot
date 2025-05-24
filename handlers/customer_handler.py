@@ -1006,7 +1006,7 @@ def register_handlers(dp):
                 
                 # Ustalara toplu bildirim gönder - En az birkaç ustaya bildirim gönderebildiğimizi loglayalım
                 notification_sent = 0
-                
+
                 # Use the notification_service instead of direct messages
                 from notification_service import notify_artisan_about_new_order
                 
@@ -1014,8 +1014,10 @@ def register_handlers(dp):
                     # Ustanın tipini ve bilgilerini doğru şekilde çıkart
                     if isinstance(artisan, dict):
                         artisan_id = artisan.get('id')
+                        
                     else:  # It's a tuple
                         artisan_id = artisan[0]
+                        
                     
                     if artisan_id:
                         try:

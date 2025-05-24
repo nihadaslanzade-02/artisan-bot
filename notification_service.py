@@ -27,7 +27,7 @@ async def notify_artisan_about_new_order(order_id, artisan_id):
             logger.error(f"Artisan or order not found. Artisan ID: {artisan_id}, Order ID: {order_id}")
             return False
         
-        # Get telegram_id directly
+        # Telegram ID'yi doğrudan kullanmak yerine dict'ten alıyoruz
         telegram_id = artisan.get('telegram_id')
         if not telegram_id:
             logger.error(f"Artisan telegram_id not found for artisan ID: {artisan_id}")

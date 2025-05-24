@@ -217,7 +217,6 @@ async def admin_panel(message: types.Message):
         InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
-        InlineKeyboardButton("🆔 Şəxsiyyət Təsdiqləri", callback_data="show_pending_verifications"),  # YENİ
         InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")
     )
     
@@ -249,7 +248,6 @@ async def admin_command(message: types.Message):
         InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
-        InlineKeyboardButton("🆔 Şəxsiyyət Təsdiqləri", callback_data="show_pending_verifications"),  # YENİ
         InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")
     )
     
@@ -279,8 +277,6 @@ async def admin_menu_handlers(callback_query: types.CallbackQuery):
             await show_admin_users(callback_query.message)
         elif menu_option == "admin_stats":
             await show_admin_stats(callback_query.message)
-        elif menu_option == "show_pending_verifications":
-            await show_pending_verifications(callback_query.message)
         else:
             await callback_query.answer("Bu funksiya hələ hazır deyil.")
         
@@ -1240,7 +1236,7 @@ async def show_customers_list(message):
     except Exception as e:
         logger.error(f"Error in show_customers_list: {e}")
         await message.answer("❌ Müştərilər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-
+        
 async def show_artisans_list(message):
     """Show list of artisans"""
     try:
@@ -1248,7 +1244,7 @@ async def show_artisans_list(message):
         
         # Get recent artisans
         query = """
-            SELECT id, name, phone, city, service, rating, created_at, active, id_verification_status
+            SELECT id, name, phone, city, service, rating, created_at, active
             FROM artisans
             ORDER BY created_at DESC
             LIMIT 20
@@ -1276,19 +1272,7 @@ async def show_artisans_list(message):
                 formatted_date = created_at
             else:
                 formatted_date = created_at.strftime("%d.%m.%Y")
-            # Format verification status
-            verification_status = artisan.get('id_verification_status', 'pending')
-            if verification_status == 'verified':
-                verification_text = "✅ Təsdiqlənib"
-                verification_emoji = "✅"
-            elif verification_status == 'rejected':
-                verification_text = "❌ Rədd edilib"
-                verification_emoji = "❌"
-            else:  # pending
-                verification_text = "⏳ Gözləyir"
-                verification_emoji = "⏳"
-
-
+            
             # Format status
             status_emoji = "🟢" if artisan.get('active', True) else "🔴"
             status_text = "Aktiv" if artisan.get('active', True) else "Bloklanıb"
@@ -1317,7 +1301,6 @@ async def show_artisans_list(message):
                 f"Xidmət: {masked_service}\n"
                 f"Reytinq: {rating_text} {rating_stars}\n"
                 f"Qeydiyyat tarixi: {formatted_date}\n"
-                f"Şəxsiyyət vəsiqəsi: {verification_emoji} {verification_text}\n"
                 f"Status: {status_emoji} {status_text}"
             )
             
@@ -1326,11 +1309,6 @@ async def show_artisans_list(message):
             keyboard.add(
                 InlineKeyboardButton("📋 Sifarişləri", callback_data=f"artisan_orders_{artisan['id']}"),
                 InlineKeyboardButton("📞 Əlaqə saxla", callback_data=f"contact_artisan_{artisan['id']}")
-            )
-            
-            # Şəxsiyyət vəsiqəsi şəklini görmək üçün düymə əlavə edirik
-            keyboard.add(
-                InlineKeyboardButton("🪪 Şəxsiyyət vəsiqəsi", callback_data=f"view_id_card_{artisan['id']}")
             )
             
             # Add block/unblock button based on current status
@@ -1349,8 +1327,7 @@ async def show_artisans_list(message):
         filter_keyboard = InlineKeyboardMarkup(row_width=2)
         filter_keyboard.add(
             InlineKeyboardButton("🟢 Aktiv", callback_data="filter_artisans_active"),
-            InlineKeyboardButton("🔴 Qeyri-aktiv", callback_data="filter_artisans_blocked"),
-            InlineKeyboardButton("⏳ Təsdiq gözləyən", callback_data="filter_artisans_pending"),
+            InlineKeyboardButton("🔴 Bloklanmış", callback_data="filter_artisans_blocked"),
             InlineKeyboardButton("🔍 Axtar", callback_data="search_artisan"),
             InlineKeyboardButton("🔙 Admin Menyusuna Qayıt", callback_data="back_to_admin")
         )
@@ -1583,11 +1560,6 @@ async def search_artisans(message, query):
             keyboard.add(
                 InlineKeyboardButton("📋 Sifarişləri", callback_data=f"artisan_orders_{artisan['id']}"),
                 InlineKeyboardButton("📞 Əlaqə saxla", callback_data=f"contact_artisan_{artisan['id']}")
-            )
-            
-            # Şəxsiyyət vəsiqəsi şəklini görmək üçün düymə əlavə edirik
-            keyboard.add(
-                InlineKeyboardButton("🪪 Şəxsiyyət vəsiqəsi", callback_data=f"view_id_card_{artisan['id']}")
             )
             
             # Add block/unblock button based on current status
@@ -2587,240 +2559,6 @@ async def process_refund_reason(message: types.Message, state: FSMContext):
         logger.error(f"Error in process_refund_reason: {e}")
         await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
         await state.finish()
-import html
-@dp.callback_query_handler(lambda c: c.data.startswith('view_id_card_'))
-async def view_id_card_handler(callback_query: types.CallbackQuery):
-    """Handle viewing artisan's ID card image"""
-    try:
-        if not is_admin(callback_query.from_user.id):
-            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
-            return
-        
-        # Parse artisan ID
-        artisan_id = int(callback_query.data.split('_')[-1])
-        
-        # Get artisan details including ID card image
-        from db import get_artisan_by_id
-        artisan = get_artisan_by_id(artisan_id)
-        
-        if not artisan:
-            await callback_query.message.answer(f"❌ Usta {artisan_id} tapılmadı.")
-            await callback_query.answer()
-            return
-        
-        # Check if ID card image exists
-        id_card_image_id = artisan.get('id_card_image_id')
-        
-        if not id_card_image_id:
-            await callback_query.message.answer(f"❌ Usta {artisan_id} üçün şəxsiyyət vəsiqəsi şəkli yoxdur.")
-            await callback_query.answer()
-            return
-        
-        # Get verification status
-        verification_status = artisan.get('id_verification_status', 'pending')
-        
-        # Get masked name for privacy
-        from db_encryption_wrapper import wrap_get_dict_function
-        masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=True)(artisan_id)
-        masked_name = masked_artisan.get('name', f'Usta {artisan_id}')
-        
-        # Create caption with verification status
-        status_emoji = {
-            'verified': '✅',
-            'rejected': '❌', 
-            'pending': '⏳'
-        }.get(verification_status, '⏳')
-        
-        status_text = {
-            'verified': 'Təsdiqlənib',
-            'rejected': 'Rədd edilib',
-            'pending': 'Gözləyir'
-        }.get(verification_status, 'Gözləyir')
-        
-        caption = f"🪪 *Şəxsiyyət vəsiqəsi*\n{html.escape(masked_name)} (ID: {artisan_id})\n\n{status_emoji} Status: {status_text}"
-        
-        # Create keyboard with verification buttons (only for pending status)
-        keyboard = None
-        if verification_status == 'pending':
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"verify_id_card_{artisan_id}_true"),
-                InlineKeyboardButton("❌ Rədd et", callback_data=f"verify_id_card_{artisan_id}_false")
-            )
-        elif verification_status in ['verified', 'rejected']:
-            # Show status change option for already processed cards
-            keyboard = InlineKeyboardMarkup(row_width=1)
-            if verification_status == 'verified':
-                keyboard.add(InlineKeyboardButton("❌ Təsdiqi ləğv et", callback_data=f"verify_id_card_{artisan_id}_false"))
-            else:  # rejected
-                keyboard.add(InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"verify_id_card_{artisan_id}_true"))
-        
-        # Send the ID card image with buttons
-        await callback_query.message.answer_photo(
-            photo=id_card_image_id,
-            caption=caption,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
-        
-        await callback_query.answer()
-    except Exception as e:
-        logger.error(f"Error in view_id_card_handler: {e}")
-        await callback_query.message.answer("❌ Şəxsiyyət vəsiqəsi şəklini yükləyərkən xəta baş verdi.")
-        await callback_query.answer()
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith('verify_id_card_'))
-async def verify_id_card_callback(callback_query: types.CallbackQuery):
-    """Handle ID card verification by admin"""
-    try:
-        if not is_admin(callback_query.from_user.id):
-            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
-            return
-        
-        # Parse callback data: verify_id_card_ARTISAN_ID_BOOL
-        parts = callback_query.data.split('_')
-        artisan_id = int(parts[3])
-        is_verified_str = parts[4]
-        
-        # Convert string to boolean
-        is_verified = (is_verified_str.lower() == 'true')
-        
-        admin_id = callback_query.from_user.id
-        
-        # Log the verification action
-        logger.info(f"Admin {admin_id} is {'verifying' if is_verified else 'rejecting'} ID card for artisan {artisan_id}")
-        
-        # Call the verification function from admin_service
-        from admin_service import verify_artisan_id_card
-        success = verify_artisan_id_card(artisan_id, is_verified, admin_id)
-        
-        if success:
-            # Update the message to reflect the new status
-            action_text = "təsdiqləndi" if is_verified else "rədd edildi"
-            status_emoji = "✅" if is_verified else "❌"
-            status_text = "Təsdiqlənib" if is_verified else "Rədd edilib"
-            
-            # Get artisan info for updated caption
-            from db import get_artisan_by_id
-            from db_encryption_wrapper import wrap_get_dict_function
-            masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=True)(artisan_id)
-            masked_name = masked_artisan.get('name', f'Usta {artisan_id}')
-            
-            # Create new caption
-            new_caption = f"🪪 *Şəxsiyyət vəsiqəsi*\n{html.escape(masked_name)} (ID: {artisan_id})\n\n{status_emoji} Status: {status_text}"
-            
-            # Create new keyboard for status change option
-            new_keyboard = InlineKeyboardMarkup(row_width=1)
-            if is_verified:
-                new_keyboard.add(InlineKeyboardButton("❌ Təsdiqi ləğv et", callback_data=f"verify_id_card_{artisan_id}_false"))
-            else:
-                new_keyboard.add(InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"verify_id_card_{artisan_id}_true"))
-            
-            # Update the message
-            await bot.edit_message_caption(
-                chat_id=callback_query.message.chat.id,
-                message_id=callback_query.message.message_id,
-                caption=new_caption,
-                reply_markup=new_keyboard,
-                parse_mode="HTML"
-            )
-            
-            # Send confirmation message
-            await callback_query.message.answer(
-                f"✅ Usta #{artisan_id} üçün şəxsiyyət vəsiqəsi {action_text}.\n"
-                f"Ustaya bildiriş göndərildi."
-            )
-            
-            # Show additional info for verification
-            if is_verified:
-                await callback_query.message.answer(
-                    f"ℹ️ Usta #{artisan_id} artıq aktiv edildi və sifarişlər qəbul edə bilər."
-                )
-            else:
-                await callback_query.message.answer(
-                    f"ℹ️ Usta #{artisan_id} qeyri-aktiv qaldı və yenidən qeydiyyatdan keçməlidir."
-                )
-        else:
-            await callback_query.message.answer(
-                f"❌ Usta #{artisan_id} üçün şəxsiyyət vəsiqəsi statusunu yeniləmək mümkün olmadı."
-            )
-        
-        await callback_query.answer()
-        
-    except Exception as e:
-        logger.error(f"Error in verify_id_card_callback: {e}")
-        await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-        await callback_query.answer()
-
-
-# Pending ID verification list for admin
-@dp.callback_query_handler(lambda c: c.data == "show_pending_verifications")
-async def show_pending_verifications(callback_query: types.CallbackQuery):
-    """Show list of pending ID verifications"""
-    try:
-        if not is_admin(callback_query.from_user.id):
-            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
-            return
-        
-        # Get pending verifications
-        from admin_service import get_pending_id_verifications
-        pending_verifications = get_pending_id_verifications()
-        
-        if not pending_verifications:
-            await callback_query.message.answer("📭 Gözləyən şəxsiyyət vəsiqəsi təsdiqi yoxdur.")
-            await callback_query.answer()
-            return
-        
-        await callback_query.message.answer(
-            f"⏳ *Gözləyən şəxsiyyət vəsiqəsi təsdiqləri ({len(pending_verifications)})*\n\n"
-            f"Təsdiqləmək üçün ustanın şəxsiyyət vəsiqəsi düyməsinə klik edin:",
-            parse_mode="Markdown"
-        )
-        
-        # Show each pending verification
-        for verification in pending_verifications:
-            artisan_id = verification['id']
-            
-            # Get masked name for display
-            from db_encryption_wrapper import wrap_get_dict_function
-            from db import get_artisan_by_id
-            masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=True)(artisan_id)
-            
-            # Format creation date
-            created_at = verification['created_at']
-            if isinstance(created_at, str):
-                formatted_date = created_at
-            else:
-                formatted_date = created_at.strftime("%d.%m.%Y %H:%M")
-            
-            verification_text = (
-                f"👷‍♂️ *Usta #{artisan_id}*\n"
-                f"Ad: {html.escape(masked_artisan['name'])}\n"
-                f"Telefon: {html.escape(masked_artisan['phone'])}\n"
-                f"Şəhər: {html.escape(verification.get('city', 'Təyin edilməyib'))}\n"
-                f"Xidmət: {html.escape(verification['service'])}\n"
-                f"Qeydiyyat tarixi: {formatted_date}"
-            )
-            
-            # Create action buttons
-            keyboard = InlineKeyboardMarkup(row_width=1)
-            keyboard.add(
-                InlineKeyboardButton("🪪 Şəxsiyyət vəsiqəsi", callback_data=f"view_id_card_{artisan_id}")
-            )
-            
-            await callback_query.message.answer(
-                verification_text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        
-        await callback_query.answer()
-        
-    except Exception as e:
-        logger.error(f"Error in show_pending_verifications: {e}")
-        await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-        await callback_query.answer()
 
 # Register all handlers
 def register_all_handlers():
@@ -2868,13 +2606,7 @@ def register_all_handlers():
     dp.register_message_handler(process_refund_reason, state=AdminRefundState.waiting_for_reason)
     dp.register_callback_query_handler(decline_refund, lambda c: c.data.startswith('decline_refund_'))
     dp.register_callback_query_handler(mark_refund_completed, lambda c: c.data.startswith('refund_completed_'))
-    dp.register_callback_query_handler(view_id_card_handler, lambda c: c.data.startswith('view_id_card_'))
     
-    # ID verification handlers
-    dp.register_callback_query_handler(view_id_card_handler, lambda c: c.data.startswith('view_id_card_'))
-    dp.register_callback_query_handler(verify_id_card_callback, lambda c: c.data.startswith('verify_id_card_'))
-    dp.register_callback_query_handler(show_pending_verifications, lambda c: c.data == "show_pending_verifications")
-
     logger.info("All handlers registered successfully!")
 
 async def scheduled_tasks():
