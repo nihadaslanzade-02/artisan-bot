@@ -88,6 +88,8 @@ async def notify_artisan_about_new_order(order_id, artisan_id):
         logger.error(f"Error in notify_artisan_about_new_order: {e}", exc_info=True)
         return False
 
+# notification_service.py içindeki notify_customer_about_order_status fonksiyonunu güncelle
+
 async def notify_customer_about_order_status(order_id, status):
     """Müşteriye sipariş durumu hakkında bildirim gönderir"""
     try:
@@ -104,7 +106,6 @@ async def notify_customer_about_order_status(order_id, status):
         from crypto_service import decrypt_data
         from db_encryption_wrapper import decrypt_dict_data
         artisan = get_artisan_by_id(order.get('artisan_id'))
-
         
         if not customer or not artisan:
             logger.error(f"Error: Customer or artisan not found for order ID: {order_id}")
@@ -117,42 +118,31 @@ async def notify_customer_about_order_status(order_id, status):
             return False
         
         artisan_id = order.get('artisan_id')
-
-        # Əvvəlki kod: artisan = get_artisan_by_id(artisan_id)
-        from crypto_service import decrypt_data
         
-        # db.py-dəki get_artisan_by_id funksiyası artıq deşifrə edilmiş versiya qaytarır,
-        # amma bəzən ola bilər ki, deşifrələmə tam işləməsin
+        # Usta bilgilerini deşifre et
         artisan = get_artisan_by_id(artisan_id)
-        
-        # Əlavə təhlükəsizlik üçün əl ilə də deşifrə edirik
         artisan_decrypted = decrypt_dict_data(artisan, mask=False)
         artisan_name = artisan_decrypted.get('name', 'Usta')
         artisan_phone = artisan_decrypted.get('phone', 'Telefon')
 
-
-        # Əgər məlumatlar hələ də şifrəlidirsə, əl ilə deşifrə etməyə çalışırıq
-        if artisan_name and isinstance(artisan_name, str) and artisan_name.startswith("gAAAAA"):
-            try:
-                artisan_name = decrypt_data(artisan_name)
-            except Exception as e:
-                logger.error(f"Error decrypting artisan name: {e}")
-                
-        if artisan_phone and isinstance(artisan_phone, str) and artisan_phone.startswith("gAAAAA"):
-            try:
-                artisan_phone = decrypt_data(artisan_phone)
-            except Exception as e:
-                logger.error(f"Error decrypting artisan phone: {e}")
-
-
         # Duruma göre mesajı hazırla
         if status == "accepted":
+            # Fiyat aralığını al - YENİ KOD
+            price_range_text = ""
+            subservice = order.get('subservice')
+            if subservice:
+                # Alt servis için fiyat aralığını al
+                price_range = get_artisan_price_ranges(artisan_id, subservice)
+                if price_range:
+                    min_price = price_range.get('min_price', 0)
+                    max_price = price_range.get('max_price', 0)
+                    price_range_text = f"\n💰 Qiymət aralığı: {min_price}-{max_price} AZN"
         
             message_text = (
                 f"✅ *Sifarişiniz qəbul edildi!*\n\n"
                 f"Sifariş #{order_id}\n"
                 f"Usta: {artisan_name}\n"
-                f"Əlaqə: {artisan_phone}\n\n"
+                f"Əlaqə: {artisan_phone}{price_range_text}\n\n"
                 f"Usta sizinlə əlaqə saxlayacaq."
             )
         elif status == "completed":

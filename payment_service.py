@@ -103,30 +103,23 @@ async def notify_customer_about_price(order_id, price):
 # payment_service.py faylında notify_customer_about_payment_options funksiyasını düzəldin
 
 async def notify_customer_about_payment_options(order_id):
-    """Müşteriye ödeme seçeneklerini gösterir"""
+    """Müşteriye ödeme seçenekleri gösterir"""
     try:
-        # Get order details with proper error checking
+        # Get order details
         order = get_order_details(order_id)
-        
         if not order:
-            logger.error(f"Order {order_id} not found")
+            logger.error(f"Order {order_id} not found for payment options")
             return False
         
-        # Ensure price exists and is valid
-        price_value = order.get('price')
-        if price_value is None:
-            logger.error(f"Order {order_id} price not set")
-            return False
-            
-        # Ensure price is a valid number
-        try:
-            price = float(price_value)
-        except (TypeError, ValueError):
-            logger.error(f"Invalid price value for order {order_id}: {price_value}")
+        # Get price from order
+        price = float(order.get('price', 0))
+        if price <= 0:
+            logger.error(f"Invalid price for order {order_id}")
             return False
         
-        # Calculate commission
+        # Calculate commission based on price (for display purposes only)
         commission_rate = 0.12  # Default rate (12%)
+        
         for tier, info in COMMISSION_RATES.items():
             if price <= info["threshold"]:
                 commission_rate = info["rate"] / 100
@@ -135,8 +128,8 @@ async def notify_customer_about_payment_options(order_id):
         admin_fee = round(price * commission_rate, 2)
         artisan_amount = price - admin_fee
         
-        # Update values in database to ensure consistency
-        set_order_price(order_id, price, admin_fee, artisan_amount)
+        # NOTE: Fiyat zaten artisan handler'da set edildi, burada tekrar set etmiyoruz
+        # Bu sayede fiyat aralığı kontrolümüz bypass edilmiyor
         
         # Create payment method keyboard
         keyboard = InlineKeyboardMarkup(row_width=2)

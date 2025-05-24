@@ -19,6 +19,7 @@ from config import *
 from notification_service import *
 import random
 import hashlib
+import db
 
 
 
@@ -988,6 +989,7 @@ def register_handlers(dp):
 
 
     # Handler for setting price for an order
+    # Handler for setting price for an order
     @dp.callback_query_handler(lambda c: c.data.startswith('set_price_'))
     async def set_order_price(callback_query: types.CallbackQuery, state: FSMContext):
         """Set price for a specific order"""
@@ -1059,6 +1061,93 @@ def register_handlers(dp):
             # Get stored order data
             data = await state.get_data()
             order_id = data['order_id']
+            subservice = data.get('subservice')
+            
+            # TEST MESAJI - sistemin çalışıp çalışmadığını kontrol etmek için
+            await message.answer(f"🔍 DEBUG: Fiyat kontrol başlıyor... Order: {order_id}, Subservice: {subservice}, Price: {price}")
+            
+            # DETAYLI DEBUG LOGLARI
+            logger.info(f"=== FIYAT KONTROLU DEBUG ===")
+            logger.info(f"Order ID: {order_id}")
+            logger.info(f"Girilen fiyat: {price}")
+            logger.info(f"Subservice: {subservice}")
+            logger.info(f"Telegram ID: {message.from_user.id}")
+            
+            # YENİ KOD: Fiyat aralığı kontrolü
+            if subservice:
+                # Ustanın bu alt servis için belirlediği fiyat aralığını kontrol et
+                telegram_id = message.from_user.id
+                artisan_id = get_artisan_by_telegram_id(telegram_id)
+                
+                logger.info(f"Bulunan artisan ID: {artisan_id}")
+                
+                if artisan_id:
+                    # Önce normal sorgu dene
+                    price_range = get_artisan_price_ranges(artisan_id, subservice)
+                    logger.info(f"Fiyat aralığı sorgu sonucu: {price_range}")
+                    
+                    # Eğer bulamazsa case insensitive dene
+                    if not price_range:
+                        logger.info("Normal sorgu sonuç vermedi, case insensitive deneniyor...")
+                        try:
+                            from db import execute_query
+                            case_insensitive_query = """
+                                SELECT apr.min_price, apr.max_price, s.name as subservice
+                                FROM artisan_price_ranges apr
+                                JOIN subservices s ON apr.subservice_id = s.id
+                                WHERE apr.artisan_id = %s AND LOWER(s.name) = LOWER(%s)
+                                AND apr.is_active = TRUE
+                            """
+                            price_range = execute_query(case_insensitive_query, (artisan_id, subservice), fetchone=True, dict_cursor=True)
+                            logger.info(f"Case insensitive sorgu sonucu: {price_range}")
+                        except Exception as e:
+                            logger.error(f"Case insensitive sorgu hatası: {e}")
+                    
+                    # Eğer hala bulamazsa, tüm mevcut subservice'leri listele
+                    if not price_range:
+                        logger.info("Hiçbir fiyat aralığı bulunamadı, mevcut subservice'leri listeleniyor...")
+                        try:
+                            list_query = """
+                                SELECT s.name, apr.min_price, apr.max_price
+                                FROM artisan_price_ranges apr
+                                JOIN subservices s ON apr.subservice_id = s.id
+                                WHERE apr.artisan_id = %s AND apr.is_active = TRUE
+                            """
+                            existing_ranges = execute_query(list_query, (artisan_id,), fetchall=True, dict_cursor=True)
+                            logger.info(f"Bu ustanın mevcut fiyat aralıkları: {existing_ranges}")
+                            logger.info(f"Aranan subservice: '{subservice}' (Tip: {type(subservice)})")
+                        except Exception as e:
+                            logger.error(f"Mevcut aralıklar sorgu hatası: {e}")
+                    
+                    if price_range:
+                        min_price = float(price_range.get('min_price', 0))
+                        max_price = float(price_range.get('max_price', 0))
+                        
+                        logger.info(f"Min fiyat: {min_price}, Max fiyat: {max_price}")
+                        logger.info(f"Fiyat kontrol: {price} < {min_price} veya {price} > {max_price}?")
+                        logger.info(f"Kontrol sonucu: {price < min_price} veya {price > max_price} = {price < min_price or price > max_price}")
+                        
+                        if price < min_price or price > max_price:
+                            logger.info("FIYAT ARALIGI HATASI - İşlem durduruldu")
+                            
+                            await message.answer(
+                                f"❌ *Qiymət aralığı xətası!*\n\n"
+                                f"'{subservice}' xidməti üçün sizin təyin etdiyiniz qiymət aralığı:\n"
+                                f"**{min_price}-{max_price} AZN**\n\n"
+                                f"Daxil etdiyiniz qiymət: **{price} AZN**\n\n"
+                                f"Zəhmət olmasa, qiyməti təyin edilmiş aralıq daxilində daxil edin.",
+                                parse_mode="Markdown"
+                            )
+                            return
+                        else:
+                            logger.info("Fiyat aralığı kontrolu başarılı - devam ediliyor")
+                    else:
+                        logger.info("Bu subservice için fiyat aralığı bulunamadı - devam ediliyor")
+                        await message.answer(f"ℹ️ INFO: '{subservice}' xidməti üçün fiyat aralığı təyin edilməyib, kontrolsuz devam ediliyor.")
+                else:
+                    logger.error("Artisan ID bulunamadı!")
+            else:
+                logger.info("Subservice tanımlı değil, fiyat kontrolu atlanıyor")
             
             # Debugging
             logger.info(f"Processing order price: ID={order_id}, Price={price}")
@@ -2669,8 +2758,9 @@ def register_handlers(dp):
             await callback_query.message.answer(
                 f"💰 *{selected_subservice}* xidməti üçün qiymət aralığını təyin edin.\n\n"
                 f"Zəhmət olmasa, minimum və maksimum qiyməti AZN ilə vergül ilə ayıraraq daxil edin.\n"
-                f"Məsələn: <code>30,80</code> - bu, 30 AZN minimum və 80 AZN maksimum qiymət deməkdir.\n"
-                f"*Qeyd: Rəqəmləri daxil edərkən qarşısında AZN yazmayın. Bu, sistem xətasına səbəb ola bilər.*{info_text}",
+                f"Məsələn: <code>30,80</code> - bu, 30 AZN minimum və 80 AZN maksimum qiymət deməkdir.\n\n"
+                f"<b>Qeyd: Rəqəmləri daxil edərkən qarşısında AZN yazmayın. Bu, sistem xətasına səbəb ola bilər.</b>{info_text}\n\n"
+                f"<b>Qeyd: Bu altxidmət növü üzrə sifarişlərinizdə bu interval xaricində qiymət daxil edə bilməyəcəksiniz.</b>{info_text}\n",
                 parse_mode="HTML"
             )
             
@@ -5130,6 +5220,66 @@ def register_handlers(dp):
                     await message.answer("❌ Sifariş tapılmadı. Silinmiş və ya ləğv edilmiş ola bilər.")
                     return
                 
+                # ƏLAVƏ EDİLDİ: Qiymət aralığı yoxlaması
+                subservice = order.get('subservice')
+                if subservice:
+                    # Ustanın bu alt servis için belirlediği fiyat aralığını kontrol et
+                    artisan_id = get_artisan_by_telegram_id(telegram_id)
+                    
+                    logger.info(f"[handle_text_input] Qiymət aralığı yoxlaması başlayır - Order: {order_id}, Subservice: {subservice}, Price: {price}, Artisan: {artisan_id}")
+                    
+                    if artisan_id:
+                        # Fiyat aralığı kontrolü
+                        price_range = get_artisan_price_ranges(artisan_id, subservice)
+                        logger.info(f"[handle_text_input] Fiyat aralığı sorgu sonucu: {price_range}")
+                        
+                        # Eğer bulamazsa case insensitive dene
+                        if not price_range:
+                            logger.info("[handle_text_input] Normal sorgu sonuç vermedi, case insensitive deneniyor...")
+                            try:
+                                from db import execute_query
+                                case_insensitive_query = """
+                                    SELECT apr.min_price, apr.max_price, s.name as subservice
+                                    FROM artisan_price_ranges apr
+                                    JOIN subservices s ON apr.subservice_id = s.id
+                                    WHERE apr.artisan_id = %s AND LOWER(s.name) = LOWER(%s)
+                                    AND apr.is_active = TRUE
+                                """
+                                price_range = execute_query(case_insensitive_query, (artisan_id, subservice), fetchone=True, dict_cursor=True)
+                                logger.info(f"[handle_text_input] Case insensitive sorgu sonucu: {price_range}")
+                            except Exception as e:
+                                logger.error(f"[handle_text_input] Case insensitive sorgu hatası: {e}")
+                        
+                        if price_range:
+                            min_price = float(price_range.get('min_price', 0))
+                            max_price = float(price_range.get('max_price', 0))
+                            
+                            logger.info(f"[handle_text_input] Min fiyat: {min_price}, Max fiyat: {max_price}")
+                            logger.info(f"[handle_text_input] Fiyat kontrol: {price} < {min_price} veya {price} > {max_price}?")
+                            logger.info(f"[handle_text_input] Kontrol sonucu: {price < min_price} veya {price > max_price} = {price < min_price or price > max_price}")
+                            
+                            if price < min_price or price > max_price:
+                                logger.info("[handle_text_input] FIYAT ARALIGI HATASI - İşlem durduruldu")
+                                
+                                await message.answer(
+                                    f"❌ *Qiymət aralığı xətası!*\n\n"
+                                    f"'{subservice}' xidməti üçün sizin təyin etdiyiniz qiymət aralığı:\n"
+                                    f"**{min_price}-{max_price} AZN**\n\n"
+                                    f"Daxil etdiyiniz qiymət: **{price} AZN**\n\n"
+                                    f"Zəhmət olmasa, qiyməti təyin edilmiş aralıq daxilində daxil edin.",
+                                    parse_mode="Markdown"
+                                )
+                                return
+                            else:
+                                logger.info("[handle_text_input] Fiyat aralığı kontrolu başarılı - devam ediliyor")
+                        else:
+                            logger.info("[handle_text_input] Bu subservice için fiyat aralığı bulunamadı - devam ediliyor")
+                            await message.answer(f"ℹ️ INFO: '{subservice}' xidməti üçün fiyat aralığı təyin edilməyib, kontrolsuz devam ediliyor.")
+                    else:
+                        logger.error("[handle_text_input] Artisan ID bulunamadı!")
+                else:
+                    logger.info("[handle_text_input] Subservice tanımlı değil, fiyat kontrolu atlanıyor")
+                
                 # Calculate commission based on price
                 commission_rate = 0.12  # Default rate (12%)
                 
@@ -5142,11 +5292,11 @@ def register_handlers(dp):
                 artisan_amount = price - admin_fee
                 
                 # Save price to order in database - Parametreleri sırasıyla gönderin, anahtar kullanmadan
-                success = db_set_order_price(
-                    order_id,  # order_id=order_id yerine
-                    price,     # price=price yerine
-                    admin_fee, # admin_fee=admin_fee yerine
-                    artisan_amount  # artisan_amount=artisan_amount yerine
+                success = db.set_order_price(
+                    order_id,
+                    price,
+                    admin_fee,
+                    artisan_amount
                 )
                 
                 if success:

@@ -401,7 +401,7 @@ def setup_database():
         if 'Elektrik' in service_ids:
             elektrik_subservices = [
                 ('Elektrik xəttinin çəkilişi', 'Elektrik xətlərinin çəkilişi və yenilənməsi'),
-                ('Ruzetka və açar təmiri', 'Ruzetka və açarların quraşdırılması və təmiri'),
+                ('Razetka və açar təmiri', 'Razetka və açarların quraşdırılması və təmiri'),
                 ('İşıqlandırma quraşdırılması', 'Lampalar və işıqlandırma sistemlərinin quraşdırılması'),
                 ('Elektrik avadanlıqlarının montajı', 'Elektrik avadanlıqlarının montajı və təmiri')
             ]
@@ -493,7 +493,7 @@ def setup_database():
                 ('Divar kağızı (oboy) vurulması', 'Divar kağızlarının vurulması və hazırlıq işləri'),
                 ('Rəngsaz işləri', 'Divar, tavan və fasadların rənglənməsi'),
                 ('Alçıpan montajı', 'Alçıpan konstruksiyalarının quraşdırılması'),
-                ('Döşəmə və laminat quraşdırılması', 'Döşəmə və laminatların quraşdırılması')
+                ('Döşəmə və laminat(parket) quraşdırılması', 'Döşəmə və laminatların (parketlərin) quraşdırılması')
             ]
             
             for name, desc in berpa_subservices:
