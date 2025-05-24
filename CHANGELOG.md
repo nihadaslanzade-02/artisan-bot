@@ -50,3 +50,12 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 ## [v1.1.3] – 2025-05-24
 ### Changed
 - removing the feature where the system takes id photo from artisans in their initial registration
+
+## [v1.1.4] – 2025-05-25
+### Added
+- artisan cannot set a price out of the price range, 
+- a new admin has added
+
+### Changed
+- the name of some subservices has been changed, 
+- the text in price range setting has been changed"
