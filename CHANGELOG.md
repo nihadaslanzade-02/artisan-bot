@@ -46,3 +46,7 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 
 ### Added
 - added a feature that an artisan is able to continue to use the bot (to accept orders) and access the button 'Profil ayarları' only after verified by admin
+
+## [v1.1.3] – 2025-05-24
+### Changed
+- removing the feature where the system takes id photo from artisans in their initial registration
