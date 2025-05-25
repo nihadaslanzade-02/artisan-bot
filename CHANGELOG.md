@@ -59,3 +59,12 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 ### Changed
 - the name of some subservices has been changed, 
 - the text in price range setting has been changed"
+  
+## [v1.1.5] – 2025-05-26
+### Changed 
+- comission rates have been changed,
+- agreement texts have been changed
+  
+### Fixed
+- all the problems related with 'Back' button,
+- some fixed in admin panel"
