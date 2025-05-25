@@ -1237,7 +1237,7 @@ def set_order_price(order_id, price, admin_fee=None, artisan_amount=None):
     # If admin_fee and artisan_amount are not provided, calculate them
     if admin_fee is None or artisan_amount is None:
         # Get commission rate based on price
-        commission_rate = 0.12  # Default rate (12%)
+        commission_rate = 0  # Default rate (12%)
         
         for tier, info in COMMISSION_RATES.items():
             if price <= info["threshold"]:

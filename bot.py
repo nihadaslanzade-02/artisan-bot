@@ -29,6 +29,7 @@ import db_setup
 from db import *
 import re
 import handlers.start
+import html
 
 # Configure logging
 logging.basicConfig(
@@ -381,14 +382,14 @@ async def show_admin_receipts(message):
                     photo=receipt['receipt_file_id'],
                     caption=caption,
                     reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
             else:
                 # If receipt file ID is missing, send text only
                 await message.answer(
                     f"{caption}\n\n⚠️ Qəbz şəkli tapılmadı!",
                     reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
     
     except Exception as e:
@@ -437,7 +438,7 @@ async def verify_receipt_handler(callback_query: types.CallbackQuery):
                 message_id=callback_query.message.message_id,
                 caption=new_caption,
                 reply_markup=None,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             
             # Send confirmation
@@ -494,10 +495,10 @@ async def show_admin_orders(message):
         )
         
         await message.answer(
-            "📋 *Son Sifarişlər*\n\n"
+            "📋 <b>Son Sifarişlər</b>\n\n"
             "Sifarişlər aşağıda göstərilir. Filterləmək üçün bir seçim edin:",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
         # Display recent orders
@@ -532,7 +533,7 @@ async def show_admin_orders(message):
             
             # Create order text
             order_text = (
-                f"🔹 *Sifariş #{order['id']}*\n"
+                f"🔹 <b>Sifariş #{order['id']}</b>\n"
                 f"📅 Tarix: {formatted_date}\n"
                 f"👤 Müştəri: {customer['name']}\n"
                 f"👷‍♂️ Usta: {artisan['name']}\n"
@@ -563,7 +564,7 @@ async def show_admin_orders(message):
             await message.answer(
                 order_text,
                 reply_markup=order_keyboard,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
     
     except Exception as e:
@@ -660,7 +661,7 @@ async def show_admin_stats(message):
         await message.answer(
             stats_text,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
     except Exception as e:
@@ -810,7 +811,7 @@ async def filter_orders(message, filter_type):
             
             # Create order text
             order_text = (
-                f"🔹 *Sifariş #{order['id']}*\n"
+                f"🔹 <b>Sifariş #{order['id']}</b>\n"
                 f"📅 Tarix: {formatted_date}\n"
                 f"👤 Müştəri: {customer['name']}\n"
                 f"👷‍♂️ Usta: {artisan['name']}\n"
@@ -829,7 +830,7 @@ async def filter_orders(message, filter_type):
             await message.answer(
                 order_text,
                 reply_markup=order_keyboard,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
     
     except Exception as e:

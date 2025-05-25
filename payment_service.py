@@ -118,7 +118,7 @@ async def notify_customer_about_payment_options(order_id):
             return False
         
         # Calculate commission based on price (for display purposes only)
-        commission_rate = 0.12  # Default rate (12%)
+        commission_rate = 0
         
         for tier, info in COMMISSION_RATES.items():
             if price <= info["threshold"]:
@@ -190,7 +190,7 @@ async def notify_artisan_about_payment_method(order_id, payment_method):
         price = float(order.get('price', 0))
         
         # Calculate commission based on price
-        commission_rate = 0.12  # Default rate (12%)
+        commission_rate = 0
         
         for tier, info in COMMISSION_RATES.items():
             threshold = info.get("threshold")
@@ -409,7 +409,7 @@ async def handle_admin_payment_deadline(order_id):
         
         # Calculate fee and fine
         price = order.get('price', 0)
-        commission_rate = 0.12  # Default rate (12%)
+        commission_rate = 0
         
         for tier, info in COMMISSION_RATES.items():
             if price <= info["threshold"]:

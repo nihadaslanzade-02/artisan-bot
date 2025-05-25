@@ -170,7 +170,7 @@ def register_handlers(dp):
                 "• Ustanın təyin etdiyi qiyməti qəbul etdikdən sonra, ödənişi nağd və ya kartla etməlisiniz\n"
                 "2. Usta ilə Davranış və Vaxt Uyğunluğu:\n"
                 "• Usta sifarişi qəbul etdikdən sonra təyin olunan vaxtda evdə olmağınız gözlənilir.\n"
-                "• Əxlaqa uyğun olmayan davranış və ya saxta sifariş verilməsi halında hesabınız bloklana bilər.\n"
+                "• Əxlaqa uyğun olmayan davranış və ya saxta sifariş verilməsi halında xidmətlərdən istifadəniz məhdudlaşdırıla bilər.\n"
                 "3. Qiymət Rədd Etmə Hüququ:\n"
                 "• Əgər usta yüksək qiymət təklif edərsə, sifarişi ləğv edə bilərsiniz.\n"
                 "4. Reytinq və Geri Bildirim:\n"
@@ -662,11 +662,22 @@ def register_handlers(dp):
             
             keyboard.add(InlineKeyboardButton("🔙 Geri", callback_data="back_to_menu"))
             
+            # Replace the customer menu with just a "Geri" button
+            reply_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            reply_keyboard.add(KeyboardButton("🔙 Geri"))
+            
+            # Show service selection with both inline keyboard and updated reply keyboard
             await message.answer(
                 "🛠 *Yeni sifariş*\n\n"
                 "Xahiş edirəm, ehtiyacınız olan xidmət növünü seçin:",
-                reply_markup=keyboard,
+                reply_markup=reply_keyboard,
                 parse_mode="Markdown"
+            )
+            
+            # Then show the inline keyboard in a separate message
+            await message.answer(
+                "Xidmət növlərindən birini seçin:",
+                reply_markup=keyboard
             )
             await OrderStates.selecting_service.set()
             
@@ -1467,6 +1478,10 @@ def register_handlers(dp):
                 await start_customer_registration(message, state)
                 return
             
+            # Replace the customer menu with just a "Geri" button
+            reply_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            reply_keyboard.add(KeyboardButton("🔙 Geri"))
+            
             # Display profile information
             profile_text = (
                 "👤 *Profiliniz*\n\n"
@@ -1486,8 +1501,14 @@ def register_handlers(dp):
             
             await message.answer(
                 profile_text,
-                reply_markup=keyboard,
+                reply_markup=reply_keyboard,
                 parse_mode="Markdown"
+            )
+            
+            # Then show the inline keyboard in a separate message
+            await message.answer(
+                "Profil ayarlarından birini seçin:",
+                reply_markup=keyboard
             )
             
             await ProfileManagementStates.viewing_profile.set()

@@ -29,15 +29,15 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 COMMISSION_RATES = {
     "low": {  # 0-50 AZN
         "threshold": 50,
-        "rate": 12
+        "rate": 0
     },
     "medium": {  # 50-200 AZN
         "threshold": 200,
-        "rate": 16  # Updated from 15% to 16% as requested
+        "rate": 1
     },
     "high": {  # 200+ AZN
         "threshold": float('inf'),
-        "rate": 20
+        "rate": 2
     }
 }
 

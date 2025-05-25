@@ -551,7 +551,7 @@ async def notify_artisan_about_invalid_commission(order_id):
         else:
             # Fallback calculation if order_payments doesn't have admin_fee
             price = float(order.get('price', 0))
-            commission_rate = 0.12  # Default rate 12%
+            commission_rate = 0
             for tier, info in COMMISSION_RATES.items():
                 threshold = info.get("threshold")
                 if threshold is not None and price <= threshold:
@@ -563,7 +563,7 @@ async def notify_artisan_about_invalid_commission(order_id):
         if admin_fee <= 0:
             logger.warning(f"Admin fee calculation for order {order_id} resulted in {admin_fee}. Using default calculation.")
             price = float(order.get('price', 0))
-            admin_fee = round(price * 0.12, 2)  # Default 12% if all else fails
+            admin_fee = round(price * 0, 2)  
         
         # Calculate total amount with penalty
         penalty_percentage = 0.15  # 15% penalty

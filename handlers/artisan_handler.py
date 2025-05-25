@@ -164,27 +164,41 @@ def register_handlers(dp):
             
             # Then show agreement
             agreement_text = (
-                "📜 *Usta Müqaviləsi*\n\n"
-                "📌 Qeyd: Bu razılaşmanı qəbul etməklə, aşağıdakı şərtləri təsdiq etmiş olursunuz:\n\n"
-                "1. Sifariş Qəbulu və Xidmət Öhdəliyi:\n"
-                "• Usta sifarişi qəbul etdikdən sonra, təyin olunan ünvana və vaxtda getmək və göstəriləcək xidməti keyfiyyətlə yerinə yetirmək öhdəliyini daşıyır.\n"
-                "2. Qiymət Təyini və Müştəri ilə Razılaşma:\n"
-                "• Sifariş qəbul edildikdən sonra qiyməti siz təyin edirsiniz. Müştəri qiyməti qəbul etdikdən sonra razılaşma qüvvəyə minir.\n"
-                "3. Komissiya Qaydasının Qəbulu:\n"
-                "• Hər tamamlanmış 0-50 AZN məbləğindəki sifariş üçün 12%, 51-200 AZN məbləğindəki sifariş üçün 16%, 200 AZN-dən yüksək məbləğlərdə sifarişlər üçün 20% komissiya ödənilir.\n"
-                "4. Ödəniş və Komissiya Prosesi:\n"
-                "• Müştəri ödənişi nağd və ya kartla edə bilər.\n"
-                "• Siz ödənişi aldıqdan sonra komissiyanı adminə 24 saat ərzində köçürməlisiniz.\n"
-                "• Komissiya ödənişi gecikərsə, 15% cərimə əlavə olunur və 18 saat ərzində ödənilməzsə hesabınız bloklanır.\n"
-                "• Hesabınızın bloku yalnız cərimə ödənişi menyusundan müəyyən olunmuş komissiya həcmini 50% cərimə məbləği ilə birlikdə ödənildikdə açılır.\n"
-                "5. Bloklanma halları:\n"
-                "• Sifariş yerinə getmədikdə: 30 AZN cərimə ilə bloklanırsınız\n"
-                "• Komissiya qəbzi saxta və ya uyğun deyilsə, bloklanma və əlavə cərimə tətbiq olunur.\n"
-                "6. Təsdiqlər və Məsuliyyət:\n"
-                "• Komissiya üçün təqdim etdiyiniz qəbz admin tərəfindən yoxlanır.\n"
-                "• Əgər təsdiqlənməzsə, 18 saat ərzində yeni və düzgün qəbz göndərilməlidir.\n\n"
-                "• Botun qaydalarını pozduqda hesabınız bloklanacaq\n\n"
-                "Bu şərtləri qəbul edib davam etmək istəyirsinizsə,  - ✅ Qəbul edirəm - düyməsini klikləyin."
+                "📜 Usta Müqaviləsi\n\n"
+                "Qeyd: Bu razılaşmanı qəbul etməklə, aşağıda göstərilən şərtləri və öhdəlikləri qəbul etmiş və təsdiqləmiş olursunuz:\n\n"
+                "1. Sifarişin Qəbulu və Xidmət Öhdəliyi\n"
+                "1.1. Usta, sifarişi qəbul etdikdən sonra göstərilən ünvana vaxtında çatmağı (yalnız əsaslı və sübut edilə bilən hallar istisna olmaqla) və xidməti keyfiyyətlə yerinə yetirməyi öhdəsinə götürür.\n\n"
+                "2. Qiymətin Təyini və Müştəri ilə Razılaşma\n"
+                "2.1. Usta sifarişi qəbul etdikdən sonra xidmətin dəyərini təyin edir.\n"
+                "2.2. Müştəri təklif olunan qiyməti qəbul etdikdən sonra razılaşma qüvvəyə minmiş sayılır və tərəflər üzərinə öhdəlik götürürlər.\n\n"
+                "3. Komissiya Qaydaları\n"
+                "3.1. Komissiyasız Əməkdaşlıq:\n"
+                "Məbləği 0 (sıfır) AZN-dən 50 (əlli) AZN-dək olan tamamlanmış sifarişlər üçün heç bir komissiya tutulmur.\n"
+                "3.2. 1% Komissiya:\n"
+                "Məbləği 50 (əlli) AZN-dən 200 (iki yüz) AZN-dək olan sifarişlər üzrə 1% (bir faiz) həcmində komissiya tətbiq edilir.\n"
+                "3.3. 2% Komissiya:\n"
+                "Məbləği 200 (iki yüz) AZN-dən yuxarı olan sifarişlər üzrə 2% (iki faiz) həcmində komissiya tətbiq edilir.\n"
+                "3.4. Komissiya yalnız sifarişin tam və müvəffəqiyyətlə yerinə yetirilməsindən sonra qüvvəyə minir və ödəniş sənədləri əsasında hesablanır.\n\n"
+                "4. Ödəniş və Komissiyanın Köçürülməsi\n"
+                "4.1. Müştəri ödənişi nağd və ya bank kartı vasitəsilə edə bilər.\n"
+                "4.2. Usta, ödənişi aldıqdan sonra müvafiq komissiya məbləğini 24 (iyirmi dörd) saat ərzində tətbiqdə qeyd olunmuş bank hesabına köçürməlidir.\n"
+                "4.3. Komissiya ödənişi gecikdirildiyi halda sistem tərəfindən xəbərdarlıq göndəriləcək. Təkrar gecikmə hallarında ustanın tətbiqə çıxışı məhdudlaşdırıla bilər.\n\n"
+                "5. Tətbiqdən Məhdudlaşdırılma və Kənarlaşdırılma Halları\n"
+                "5.1. Aşağıdakı hallar aşkarlandıqda usta tətbiqdən müvəqqəti və ya daimi olaraq uzaqlaşdırıla bilər:\n"
+                "5.1.1. Müştərilər tərəfindən davamlı şikayətlərin daxil olması və xidmət keyfiyyətinin aşağı olması;\n"
+                "5.1.2. Komissiya ödənişi ilə bağlı saxta və ya uyğunsuz qəbzlərin təqdim edilməsi;\n"
+                "5.1.3. Müştərilərə qarşı etik olmayan davranışların müşahidə olunması.\n\n"
+                "6. Təsdiqlər və Məsuliyyətlər\n"
+                "6.1. Usta tərəfindən təqdim edilən komissiya qəbzləri admin komandası tərəfindən yoxlanılır.\n"
+                "6.2. Uyğunsuzluq aşkarlandığı halda, 24 saat ərzində düzgün və yeni qəbz təqdim edilməlidir.\n"
+                "6.3. Bu müqavilənin hər hansı bəndinə əməl olunmadığı halda ilkin xəbərdarlıq edilir. Təkrar pozuntu halında ustanın tətbiqə çıxışı məhdudlaşdırıla və əməkdaşlıq sonlandırıla bilər.\n\n"
+                "7. Dəyişikliklər və Əlavələr\n"
+                "7.1. Bu müqaviləyə ediləcək istənilən dəyişiklik və ya əlavə, yalnız tətbiqin rəhbərliyi tərəfindən yazılı formada təqdim edilməklə və usta tərəfindən təsdiqləndikdən sonra qüvvəyə minmiş sayılır.\n"
+                "7.2. Dəyişikliklər tətbiqdə ayrıca bildiriş vasitəsilə ustalara təqdim olunur və usta tərəfindən qəbul edildiyi halda hüquqi qüvvəyə malik olur.\n\n"
+
+                "Qəbul etməklə, yuxarıdakı bütün şərtlərlə razı olduğunuzu və onları yerinə yetirməyi öhdənizə götürdüyünüzü təsdiq etmiş olursunuz.\n\n"
+
+                "✅ “Qəbul edirəm” - düyməsini klikləməklə razılaşmanı təsdiqləyin."
                 )
             
             # Create agreement buttons
@@ -257,7 +271,7 @@ def register_handlers(dp):
             
             # Return to role selection
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            keyboard.row("👤 Müştəriyəm", "👷 Ustayam")
+            keyboard.row("👤 Müştəriyəm", "🛠 Ustayam")
             keyboard.row("ℹ️ Əmr bələdçisi")
             
             if callback_query.from_user.id in BOT_ADMINS:
@@ -1153,7 +1167,7 @@ def register_handlers(dp):
             logger.info(f"Processing order price: ID={order_id}, Price={price}")
             
             # Calculate commission based on price
-            commission_rate = 0.12  # Default rate (12%)
+            commission_rate = 0
             
             for tier, info in COMMISSION_RATES.items():
                 if price <= info["threshold"]:
@@ -1320,7 +1334,7 @@ def register_handlers(dp):
             
             if success:
                 # Calculate admin fee
-                admin_fee = order.get('admin_fee', order['price'] * 0.12)  # Default 12% if not set
+                admin_fee = order.get('admin_fee', order['price'] * 0)
                 
                 # Inform artisan about the process
                 await callback_query.message.answer(
@@ -1850,6 +1864,10 @@ def register_handlers(dp):
             else:
                 blocked_info = ""
             
+            # Replace the artisan menu with just a "Geri" button
+            reply_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            reply_keyboard.add(KeyboardButton("🔙🔙🔙 Geri"))
+            
             # Display profile information
             profile_text = (
                 "👤 *Profil məlumatlarınız*\n\n"
@@ -1865,6 +1883,7 @@ def register_handlers(dp):
             
             await message.answer(
                 profile_text,
+                reply_markup=reply_keyboard,
                 parse_mode="Markdown"
             )
             
@@ -1881,6 +1900,7 @@ def register_handlers(dp):
                 InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu")
             )
             
+            # Then show the inline keyboard in a separate message
             await message.answer(
                 "⚙️ *Profil ayarları*\n\n"
                 "Aşağıdakı əməliyyatlardan birini seçin:",
@@ -2602,6 +2622,10 @@ def register_handlers(dp):
                 )
                 return
             
+            # Replace the artisan menu with just a "Geri" button
+            reply_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            reply_keyboard.add(KeyboardButton("🔙🔙🔙 Geri"))
+            
             # Get artisan price ranges
             price_ranges = get_artisan_price_ranges(artisan_id)
             
@@ -2621,6 +2645,7 @@ def register_handlers(dp):
             if price_ranges:
                 await message.answer(
                     "💰 *Mövcud qiymət aralıqlarınız:*",
+                    reply_markup=reply_keyboard,
                     parse_mode="Markdown"
                 )
                 
@@ -2637,7 +2662,8 @@ def register_handlers(dp):
             else:
                 await message.answer(
                     "ℹ️ Hələ heç bir qiymət aralığı təyin etməmisiniz. "
-                    "Zəhmət olmasa, xidmət növləriniz üçün qiymət aralıqlarını təyin edin."
+                    "Zəhmət olmasa, xidmət növləriniz üçün qiymət aralıqlarını təyin edin.",
+                    reply_markup=reply_keyboard
                 )
             
             # Create keyboard for subservice selection
@@ -2651,6 +2677,7 @@ def register_handlers(dp):
             
             keyboard.add(InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu"))
             
+            # Then show the inline keyboard in a separate message
             await message.answer(
                 "💰 *Qiymət aralığını təyin etmək istədiyiniz xidməti seçin:*",
                 reply_markup=keyboard,
@@ -3840,6 +3867,15 @@ def register_handlers(dp):
         try:
             card_number = message.text.strip()
             
+            # Check if user wants to go back
+            if card_number == "🔙🔙🔙 Geri":
+                await message.answer(
+                    "❌ Ödəniş məlumatları əlavə etmə prosesi ləğv edildi."
+                )
+                await state.finish()
+                await show_artisan_menu(message)
+                return
+            
             # Simple validation: make sure it's 16-19 digits, possibly with spaces
             card_number_clean = card_number.replace(' ', '')
             if not card_number_clean.isdigit() or not (16 <= len(card_number_clean) <= 19):
@@ -3875,6 +3911,15 @@ def register_handlers(dp):
         """Process card holder name input"""
         try:
             card_holder = message.text.strip()
+            
+            # Check if user wants to go back
+            if card_holder == "🔙🔙🔙 Geri":
+                await message.answer(
+                    "❌ Ödəniş məlumatları əlavə etmə prosesi ləğv edildi."
+                )
+                await state.finish()
+                await show_artisan_menu(message)
+                return
             
             # Simple validation: make sure it's at least 5 characters
             if len(card_holder) < 5:
@@ -4177,6 +4222,27 @@ def register_handlers(dp):
             )
             await state.finish()
             await show_role_selection(message)
+
+    # Handler for "Geri" button
+    @dp.message_handler(lambda message: message.text == "🔙🔙🔙 Geri", state="*")
+    async def go_back_to_artisan_menu(message: types.Message, state: FSMContext):
+        """Go back to the artisan menu from any state"""
+        try:
+            # Cancel the current operation
+            current_state = await state.get_state()
+            if current_state is not None:
+                await state.finish()
+            
+            # Reset main artisan menu
+            await show_artisan_menu(message)
+            
+        except Exception as e:
+            logger.error(f"Error in go_back_to_artisan_menu: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_artisan_menu(message)
 
 
     @dp.callback_query_handler(lambda c: c.data.startswith('accept_order_'))
@@ -4641,7 +4707,7 @@ def register_handlers(dp):
             
             # Calculate commission
             price = float(order.get('price', 0))
-            commission_rate = 0.12  # Default rate (12%)
+            commission_rate = 0
             
             for tier, info in COMMISSION_RATES.items():
                 if price <= info["threshold"]:
@@ -5281,7 +5347,7 @@ def register_handlers(dp):
                     logger.info("[handle_text_input] Subservice tanımlı değil, fiyat kontrolu atlanıyor")
                 
                 # Calculate commission based on price
-                commission_rate = 0.12  # Default rate (12%)
+                commission_rate = 0
                 
                 for tier, info in COMMISSION_RATES.items():
                     if price <= info["threshold"]:
