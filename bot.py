@@ -130,7 +130,7 @@ async def start(message: types.Message):
         
         # Create welcome keyboard
         keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-        keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Ustayam"))
+        keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Usta/Təmizlikçi"))
         
         # Admin üçün xüsusi düymə əlavə et
         if is_admin_user:
@@ -171,8 +171,8 @@ async def help_command(message: types.Message):
             "• Probleminiz haqqında qısa məlumat yazın\n"
             "• Sifarişi təsdiqləyin\n\n"
             
-            "*Ustalar üçün:*\n"
-            "• 'Ustayam' seçin\n"
+            "*Ustalar və təmizlikçilər üçün:*\n"
+            "• 'Usta/Təmizlikçi' seçin\n"
             "• İlk dəfədirsə, qeydiyyatdan keçin\n"
             "• 'Aktiv sifarişlər' bölməsində müştəri sifarişlərini görün\n"
             "• Sifarişləri qəbul edin və ya ləğv edin\n\n"
@@ -365,7 +365,7 @@ async def show_admin_receipts(message):
             
             # Create caption with order details
             caption = (
-                f"🧾 *Sifariş #{order_id}*\n"
+                f"🧾 <b>Sifariş #{order_id}</b>\n"
                 f"👤 Müştəri: {customer['name']}\n"
                 f"👷‍♂️ Usta: {artisan['name']}\n"
                 f"🛠 Xidmət: {receipt['service']}\n"
@@ -640,14 +640,14 @@ async def show_admin_stats(message):
         
         # Create statistics message
         stats_text = (
-            "📊 *Sistem Statistikaları*\n\n"
-            f"👤 *Müştərilər:* {total_customers}\n"
-            f"👷‍♂️ *Ustalar:* {total_artisans}\n\n"
-            f"📋 *Ümumi sifarişlər:* {total_orders}\n"
-            f"✅ *Tamamlanmış sifarişlər:* {completed_orders}\n"
-            f"❌ *Ləğv edilmiş sifarişlər:* {cancelled_orders}\n\n"
-            f"💰 *Ümumi komissiya gəliri:* {total_revenue:.2f} AZN\n\n"
-            f"🔝 *Ən populyar xidmətlər:*\n{service_text}"
+            "📊 <b>Sistem Statistikaları</b>\n\n"
+            f"👤 <b>Müştərilər:</b> {total_customers}\n"
+            f"👷‍♂️ <b>Ustalar:</b> {total_artisans}\n\n"
+            f"📋 <b>Ümumi sifarişlər:</b> {total_orders}\n"
+            f"✅ <b>Tamamlanmış sifarişlər:</b> {completed_orders}\n"
+            f"❌ <b>Ləğv edilmiş sifarişlər:</b> {cancelled_orders}\n\n"
+            f"💰 <b>Ümumi komissiya gəliri:</b> {total_revenue:.2f} AZN\n\n"
+            f"🔝 <b>Ən populyar xidmətlər:</b>\n{service_text}"
         )
         
         # Create options keyboard
@@ -2231,9 +2231,9 @@ async def pay_customer_fine_callback(callback_query: types.CallbackQuery):
             f"💰 *Cərimə ödənişi*\n\n"
             f"Hesabınız aşağıdakı səbəbə görə bloklanıb:\n"
             f"*Səbəb:* {reason}\n\n"
-            f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
+            f"Bloku açmaq üçün 10 AZN ödəniş etməlisiniz.\n\n"
             f"*Ödəniş təlimatları:*\n"
-            f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER} ({ADMIN_CARD_HOLDER})\n"
+            f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER}\n"
             f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
             f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
             f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",
@@ -2440,7 +2440,7 @@ async def show_command_guide(message: types.Message):
 async def show_role_selection(message: types.Message):
     """Show role selection menu"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row("👤 Müştəriyəm", "👷 Ustayam")
+    keyboard.row("👤 Müştəriyəm", "🛠 Usta/Təmizlikçi")
     keyboard.row("ℹ️ Əmr bələdçisi")
     
     if message.from_user.id in BOT_ADMINS:
@@ -2612,18 +2612,56 @@ def register_all_handlers():
 
 async def scheduled_tasks():
     """Run scheduled tasks at regular intervals"""
+    minute_counter = 0
+    
     while True:
         try:
-            # Run payment status checks every 5 minutes
-            from admin_service import check_payment_status_changes
-            await check_payment_status_changes()
+            # Check delay reminders every minute
+            await process_delay_reminders()
             
-            # Sleep for 5 minutes
-            await asyncio.sleep(5 * 60)  # 5 minutes
+            # Run payment status checks every 5 minutes
+            if minute_counter % 5 == 0:
+                from admin_service import check_payment_status_changes
+                await check_payment_status_changes()
+            
+            minute_counter += 1
+            
+            # Sleep for 1 minute
+            await asyncio.sleep(60)  # 1 minute
         except Exception as e:
             logger.error(f"Error in scheduled tasks: {e}")
             # Sleep for 1 minute in case of error
             await asyncio.sleep(60)
+
+async def process_delay_reminders():
+    """Process due delay reminders"""
+    try:
+        from db import get_due_delay_reminders, mark_delay_reminder_completed, mark_delay_reminder_failed
+        from order_status_service import send_delay_reminder
+        
+        # Get all delay reminders that are due
+        due_reminders = get_due_delay_reminders()
+        
+        for task_id, order_id in due_reminders:
+            try:
+                logger.info(f"Processing delay reminder for order {order_id}")
+                
+                # Send the reminder
+                success = await send_delay_reminder(order_id)
+                
+                if success:
+                    mark_delay_reminder_completed(task_id)
+                    logger.info(f"Delay reminder completed for order {order_id}")
+                else:
+                    mark_delay_reminder_failed(task_id)
+                    logger.error(f"Delay reminder failed for order {order_id}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing delay reminder for order {order_id}: {e}")
+                mark_delay_reminder_failed(task_id)
+                
+    except Exception as e:
+        logger.error(f"Error in process_delay_reminders: {e}")
 
 async def admin_webhook_handler(request):
     """Handle webhooks from admin panel"""

@@ -2633,3 +2633,181 @@ def get_masked_customer_orders(customer_id):
 def get_masked_artisan_active_orders(artisan_id):
     """Usta aktif siparişlerini maskelenmiş olarak al"""
     return wrap_get_list_function(get_artisan_active_orders, decrypt=True, mask=True)(artisan_id)
+
+# -------------------------
+# DELAY REMINDER FUNCTIONS  
+# -------------------------
+
+def create_delay_reminder(order_id, execution_time):
+    """Create a delay reminder task in the database
+    
+    Args:
+        order_id (int): ID of the order
+        execution_time (datetime): When the reminder should be sent
+        
+    Returns:
+        int: ID of the created task or None if failed
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Insert delay reminder task
+        cursor.execute(
+            """
+            INSERT INTO scheduled_tasks 
+            (task_type, reference_id, execution_time, status, additional_data, created_at)
+            VALUES (%s, %s, %s, 'pending', JSON_OBJECT('type', 'delay_reminder'), NOW())
+            """,
+            ('delay_reminder', order_id, execution_time)
+        )
+        
+        task_id = cursor.lastrowid
+        conn.commit()
+        logger.info(f"Created delay reminder task {task_id} for order {order_id}")
+        return task_id
+        
+    except Exception as e:
+        logger.error(f"Error creating delay reminder: {e}")
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def cancel_delay_reminder(order_id):
+    """Cancel any pending delay reminder for an order
+    
+    Args:
+        order_id (int): ID of the order
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Update status to cancelled for pending delay reminders
+        cursor.execute(
+            """
+            UPDATE scheduled_tasks 
+            SET status = 'cancelled', completed_at = NOW()
+            WHERE task_type = 'delay_reminder' 
+            AND reference_id = %s 
+            AND status = 'pending'
+            """,
+            (order_id,)
+        )
+        
+        cancelled_count = cursor.rowcount
+        conn.commit()
+        
+        if cancelled_count > 0:
+            logger.info(f"Cancelled {cancelled_count} delay reminder(s) for order {order_id}")
+            return True
+        else:
+            logger.info(f"No pending delay reminders found for order {order_id}")
+            return True  # No error, just nothing to cancel
+            
+    except Exception as e:
+        logger.error(f"Error cancelling delay reminder: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_due_delay_reminders():
+    """Get all delay reminders that are due for execution
+    
+    Returns:
+        list: List of tuples (task_id, order_id) that are due
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Get pending delay reminders that are due
+        cursor.execute(
+            """
+            SELECT id, reference_id 
+            FROM scheduled_tasks 
+            WHERE task_type = 'delay_reminder' 
+            AND status = 'pending' 
+            AND execution_time <= NOW()
+            ORDER BY execution_time ASC
+            """
+        )
+        
+        results = cursor.fetchall()
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error getting due delay reminders: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def mark_delay_reminder_completed(task_id):
+    """Mark a delay reminder task as completed
+    
+    Args:
+        task_id (int): ID of the task
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            UPDATE scheduled_tasks 
+            SET status = 'completed', completed_at = NOW()
+            WHERE id = %s
+            """,
+            (task_id,)
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error marking delay reminder completed: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def mark_delay_reminder_failed(task_id):
+    """Mark a delay reminder task as failed
+    
+    Args:
+        task_id (int): ID of the task
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            UPDATE scheduled_tasks 
+            SET status = 'failed', completed_at = NOW()
+            WHERE id = %s
+            """,
+            (task_id,)
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error marking delay reminder failed: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()

@@ -267,7 +267,7 @@ def register_handlers(dp):
             
             # Return to role selection
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            keyboard.row("👤 Müştəriyəm", "👷 Ustayam")
+            keyboard.row("👤 Müştəriyəm", "🛠 Usta/Təmizlikçi")
             keyboard.row("ℹ️ Əmr bələdçisi")
             
             if callback_query.from_user.id in BOT_ADMINS:
@@ -609,7 +609,7 @@ def register_handlers(dp):
     async def show_role_selection(message: types.Message):
         """Show role selection menu"""
         keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-        keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Ustayam"))
+        keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Usta/Təmizlikçi"))
         
         await message.answer(
             "Xoş gəldiniz! Zəhmət olmasa, rolunuzu seçin:",
@@ -1949,6 +1949,15 @@ def register_handlers(dp):
                 await callback_query.answer()
                 return
             
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
+                )
+                await show_customer_menu(callback_query.message)
+                await callback_query.answer()
+                return
+            
             # Get customer ID
             telegram_id = callback_query.from_user.id
             customer = get_customer_by_telegram_id(telegram_id)
@@ -2049,13 +2058,16 @@ def register_handlers(dp):
             # Import block function
             from order_status_service import block_artisan_for_no_show
             
-            # Block artisan for no-show
+            # Block artisan for no-show - this will also terminate the order
             await block_artisan_for_no_show(order_id)
             
             await callback_query.message.answer(
                 f"🎁 Üzrxahlıq olaraq növbəti sifarişiniz üçün 10 AZN endirim qazandınız.\n\n"
                 f"Yeni bir sifariş verməyiniz tövsiyə olunur."
             )
+            
+            # Show customer menu immediately after the apology message
+            await show_customer_menu(callback_query.message)
             
             await callback_query.answer()
             
@@ -2085,6 +2097,16 @@ def register_handlers(dp):
                 await callback_query.message.answer(
                     "❌ Sifariş tapılmadı. Silinmiş və ya ləğv edilmiş ola bilər."
                 )
+                await callback_query.answer()
+                return
+            
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                logger.warning(f"Order {order_id} is already cancelled")
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
+                )
+                await show_customer_menu(callback_query.message)
                 await callback_query.answer()
                 return
                 
@@ -2172,24 +2194,43 @@ def register_handlers(dp):
                 await callback_query.answer()
                 return
             
-            # Update order status to cancelled
-            update_order_status(order_id, "cancelled")
-            
-            # Notify artisan about rejection
-            artisan = get_artisan_by_id(order['artisan_id'])
-            if artisan and artisan.get('telegram_id'):
-                await bot.send_message(
-                    chat_id=artisan['telegram_id'],
-                    text=f"❌ *Qiymət rədd edildi*\n\n"
-                        f"Təəssüf ki, müştəri sifariş #{order_id} üçün təyin etdiyiniz "
-                        f"qiyməti qəbul etmədi. Sifariş ləğv edildi.",
-                    parse_mode="Markdown"
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
                 )
+                await show_customer_menu(callback_query.message)
+                await callback_query.answer()
+                return
             
-            await callback_query.message.answer(
-                f"❌ Qiyməti rədd etdiniz. Sifariş ləğv edildi.\n\n"
-                f"Başqa bir usta tapmaq üçün yeni sifariş verə bilərsiniz."
-            )
+            # Update order status to cancelled
+            success = update_order_status(order_id, "cancelled")
+            
+            if success:
+                # Notify artisan about rejection
+                artisan = get_artisan_by_id(order['artisan_id'])
+                if artisan and artisan.get('telegram_id'):
+                    await bot.send_message(
+                        chat_id=artisan['telegram_id'],
+                        text=f"❌ *Qiymət rədd edildi*\n\n"
+                            f"Təəssüf ki, müştəri sifariş #{order_id} üçün təyin etdiyiniz "
+                            f"qiyməti qəbul etmədi. Sifariş ləğv edildi.",
+                        parse_mode="Markdown"
+                    )
+                
+                # Send cancellation message
+                await callback_query.message.answer(
+                    f"❌ Qiyməti rədd etdiniz. Sifariş #{order_id} ləğv edildi.\n\n"
+                    f"Başqa bir usta tapmaq üçün yeni sifariş verə bilərsiniz."
+                )
+                
+                # Show customer menu automatically
+                await show_customer_menu(callback_query.message)
+                
+            else:
+                await callback_query.message.answer(
+                    "❌ Sifariş ləğv edilərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+                )
             
             await callback_query.answer()
             
@@ -2216,6 +2257,15 @@ def register_handlers(dp):
                 await callback_query.message.answer(
                     "❌ Sifariş tapılmadı. Silinmiş və ya ləğv edilmiş ola bilər."
                 )
+                await callback_query.answer()
+                return
+            
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
+                )
+                await show_customer_menu(callback_query.message)
                 await callback_query.answer()
                 return
             
@@ -2260,6 +2310,15 @@ def register_handlers(dp):
                 await callback_query.answer()
                 return
             
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
+                )
+                await show_customer_menu(callback_query.message)
+                await callback_query.answer()
+                return
+            
             # Import payment functions
             from payment_service import notify_artisan_about_payment_method, notify_customer_about_cash_payment
             
@@ -2297,6 +2356,15 @@ def register_handlers(dp):
                 await callback_query.message.answer(
                     "❌ Sifariş tapılmadı. Ləğv edilmiş ola bilər."
                 )
+                await callback_query.answer()
+                return
+            
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
+                )
+                await show_customer_menu(callback_query.message)
                 await callback_query.answer()
                 return
             
@@ -2356,6 +2424,15 @@ def register_handlers(dp):
                 await callback_query.answer()
                 return
             
+            # Check if order is already cancelled
+            if order.get('status') == 'cancelled':
+                await callback_query.message.answer(
+                    "❌ Bu sifariş artıq ləğv edilib. Yeni sifariş vermək üçün aşağıdakı menyudan istifadə edin."
+                )
+                await show_customer_menu(callback_query.message)
+                await callback_query.answer()
+                return
+            
             # Notify artisan
             artisan = get_artisan_by_id(order['artisan_id'])
             if artisan and artisan.get('telegram_id'):
@@ -2363,13 +2440,11 @@ def register_handlers(dp):
                     chat_id=artisan['telegram_id'],
                     text=f"✅ *Nağd ödəniş təsdiqləndi*\n\n"
                         f"Müştəri sifariş #{order_id} üçün nağd ödənişi tamamladığını təsdiqlədi.\n\n"
-                        f"Zəhmət olmasa, 24 saat ərzində komissiya məbləğini admin kartına köçürün.",
+                        f"Sifarişiniz tamamlandı. Təşəkkür edirik!",
                     parse_mode="Markdown"
                 )
                 
-                # Schedule commission payment deadline notification
-                from payment_service import handle_admin_payment_deadline
-                asyncio.create_task(handle_admin_payment_deadline(order_id))
+
             
             
             
@@ -2391,11 +2466,6 @@ def register_handlers(dp):
                 logger.info(f"Review request sent successfully for order {order_id}")
             except Exception as review_error:
                 logger.error(f"Error sending review request: {review_error}", exc_info=True)
-
-            
-            # Return to customer menu after a short delay
-            await asyncio.sleep(1)  # Wait 2 seconds to ensure messages are seen
-            await show_customer_menu(callback_query.message)
             
             await callback_query.answer()
             
@@ -2515,9 +2585,6 @@ def register_handlers(dp):
                         from notification_service import send_review_request_to_customer
                         await send_review_request_to_customer(order_id)
 
-                    await asyncio.sleep(2)  # Wait 2 seconds to ensure messages are seen
-                    await show_customer_menu(message)
-
                 else:
                     await message.answer(
                         "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
@@ -2550,9 +2617,6 @@ def register_handlers(dp):
                         "Qəbz yoxlanıldıqdan sonra sifarişiniz tamamlanacaq. Təşəkkür edirik!",
                         reply_markup=types.ReplyKeyboardRemove()
                     )
-
-                    await asyncio.sleep(2)  # 2 saniyə gözləyin ki, mesajlar görünsün
-                    await show_customer_menu(message)
                 else:
                     await message.answer(
                         "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."

@@ -113,7 +113,7 @@ async def show_command_guide(message: types.Message):
 # Register artisan handlers
 def register_handlers(dp):
     # Handler for when user selects "Artisan" role
-    @dp.message_handler(lambda message: message.text == "🛠 Ustayam")
+    @dp.message_handler(lambda message: message.text == "🛠 Usta/Təmizlikçi")
     async def handle_artisan(message: types.Message, state: FSMContext):
         """Handle when user selects the artisan role"""
         try:
@@ -171,30 +171,18 @@ def register_handlers(dp):
                 "2. Qiymətin Təyini və Müştəri ilə Razılaşma\n"
                 "2.1. Usta sifarişi qəbul etdikdən sonra xidmətin dəyərini təyin edir.\n"
                 "2.2. Müştəri təklif olunan qiyməti qəbul etdikdən sonra razılaşma qüvvəyə minmiş sayılır və tərəflər üzərinə öhdəlik götürürlər.\n\n"
-                "3. Komissiya Qaydaları\n"
-                "3.1. Komissiyasız Əməkdaşlıq:\n"
-                "Məbləği 0 (sıfır) AZN-dən 50 (əlli) AZN-dək olan tamamlanmış sifarişlər üçün heç bir komissiya tutulmur.\n"
-                "3.2. 1% Komissiya:\n"
-                "Məbləği 50 (əlli) AZN-dən 200 (iki yüz) AZN-dək olan sifarişlər üzrə 1% (bir faiz) həcmində komissiya tətbiq edilir.\n"
-                "3.3. 2% Komissiya:\n"
-                "Məbləği 200 (iki yüz) AZN-dən yuxarı olan sifarişlər üzrə 2% (iki faiz) həcmində komissiya tətbiq edilir.\n"
-                "3.4. Komissiya yalnız sifarişin tam və müvəffəqiyyətlə yerinə yetirilməsindən sonra qüvvəyə minir və ödəniş sənədləri əsasında hesablanır.\n\n"
-                "4. Ödəniş və Komissiyanın Köçürülməsi\n"
-                "4.1. Müştəri ödənişi nağd və ya bank kartı vasitəsilə edə bilər.\n"
-                "4.2. Usta, ödənişi aldıqdan sonra müvafiq komissiya məbləğini 24 (iyirmi dörd) saat ərzində tətbiqdə qeyd olunmuş bank hesabına köçürməlidir.\n"
-                "4.3. Komissiya ödənişi gecikdirildiyi halda sistem tərəfindən xəbərdarlıq göndəriləcək. Təkrar gecikmə hallarında ustanın tətbiqə çıxışı məhdudlaşdırıla bilər.\n\n"
-                "5. Tətbiqdən Məhdudlaşdırılma və Kənarlaşdırılma Halları\n"
-                "5.1. Aşağıdakı hallar aşkarlandıqda usta tətbiqdən müvəqqəti və ya daimi olaraq uzaqlaşdırıla bilər:\n"
-                "5.1.1. Müştərilər tərəfindən davamlı şikayətlərin daxil olması və xidmət keyfiyyətinin aşağı olması;\n"
-                "5.1.2. Komissiya ödənişi ilə bağlı saxta və ya uyğunsuz qəbzlərin təqdim edilməsi;\n"
-                "5.1.3. Müştərilərə qarşı etik olmayan davranışların müşahidə olunması.\n\n"
-                "6. Təsdiqlər və Məsuliyyətlər\n"
-                "6.1. Usta tərəfindən təqdim edilən komissiya qəbzləri admin komandası tərəfindən yoxlanılır.\n"
-                "6.2. Uyğunsuzluq aşkarlandığı halda, 24 saat ərzində düzgün və yeni qəbz təqdim edilməlidir.\n"
-                "6.3. Bu müqavilənin hər hansı bəndinə əməl olunmadığı halda ilkin xəbərdarlıq edilir. Təkrar pozuntu halında ustanın tətbiqə çıxışı məhdudlaşdırıla və əməkdaşlıq sonlandırıla bilər.\n\n"
-                "7. Dəyişikliklər və Əlavələr\n"
-                "7.1. Bu müqaviləyə ediləcək istənilən dəyişiklik və ya əlavə, yalnız tətbiqin rəhbərliyi tərəfindən yazılı formada təqdim edilməklə və usta tərəfindən təsdiqləndikdən sonra qüvvəyə minmiş sayılır.\n"
-                "7.2. Dəyişikliklər tətbiqdə ayrıca bildiriş vasitəsilə ustalara təqdim olunur və usta tərəfindən qəbul edildiyi halda hüquqi qüvvəyə malik olur.\n\n"
+                "3. Ödəniş\n"
+                "3.1. Müştəri ödənişi nağd və ya bank kartı vasitəsilə edə bilər.\n"
+                "3.2. Ödəniş kart vasitəsilə edildikdə məbləğ 24 saat ərzində ustanın kart hesabına köçürülür.\n\n"
+                "4. Tətbiqdən Məhdudlaşdırılma və Kənarlaşdırılma Halları\n"
+                "4.1. Aşağıdakı hallar aşkarlandıqda usta tətbiqdən müvəqqəti və ya daimi olaraq uzaqlaşdırıla bilər:\n"
+                "4.1.1. Müştərilər tərəfindən davamlı şikayətlərin daxil olması və xidmət keyfiyyətinin aşağı olması;\n"
+                "4.1.2. Müştərilərə qarşı etik olmayan davranışların müşahidə olunması.\n\n"
+                "5. Məsuliyyətlər\n"
+                "5.1. Bu müqavilənin hər hansı bəndinə əməl olunmadığı halda ilkin xəbərdarlıq edilir. Təkrar pozuntu halında ustanın tətbiqə çıxışı məhdudlaşdırıla və əməkdaşlıq sonlandırıla bilər.\n\n"
+                "6. Dəyişikliklər və Əlavələr\n"
+                "6.1. Bu müqaviləyə ediləcək istənilən dəyişiklik və ya əlavə, yalnız tətbiqin rəhbərliyi tərəfindən yazılı formada təqdim edilməklə və usta tərəfindən təsdiqləndikdən sonra qüvvəyə minmiş sayılır.\n"
+                "6.2. Dəyişikliklər tətbiqdə ayrıca bildiriş vasitəsilə ustalara təqdim olunur və usta tərəfindən qəbul edildiyi halda hüquqi qüvvəyə malik olur.\n\n"
 
                 "Qəbul etməklə, yuxarıdakı bütün şərtlərlə razı olduğunuzu və onları yerinə yetirməyi öhdənizə götürdüyünüzü təsdiq etmiş olursunuz.\n\n"
 
@@ -271,7 +259,7 @@ def register_handlers(dp):
             
             # Return to role selection
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            keyboard.row("👤 Müştəriyəm", "🛠 Ustayam")
+            keyboard.row("👤 Müştəriyəm", "🛠 Usta/Təmizlikçi")
             keyboard.row("ℹ️ Əmr bələdçisi")
             
             if callback_query.from_user.id in BOT_ADMINS:
@@ -857,7 +845,7 @@ def register_handlers(dp):
     async def show_role_selection(message: types.Message):
         """Show role selection menu"""
         keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-        keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Ustayam"))
+        keyboard.add(KeyboardButton("👤 Müştəriyəm"), KeyboardButton("🛠 Usta/Təmizlikçi"))
         
         await message.answer(
             "Xoş gəldiniz! Zəhmət olmasa, rolunuzu seçin:",
@@ -1211,8 +1199,7 @@ def register_handlers(dp):
                 
                 await message.answer(
                     f"✅ Qiymət uğurla təyin edildi: {price} AZN\n\n"
-                    f"Komissiya ({int(commission_rate*100)}%): {admin_fee:.2f} AZN\n"
-                    f"Sizə qalacaq məbləğ: {artisan_amount:.2f} AZN\n\n"
+                    f"Məbləğ: {artisan_amount:.2f} AZN\n\n"
                     f"İndi müştəriyə ödəniş üsulunu seçməyi təklif edin:",
                     reply_markup=keyboard
                 )
@@ -1340,28 +1327,9 @@ def register_handlers(dp):
                 await callback_query.message.answer(
                     f"💵 *Nağd ödəniş seçildi*\n\n"
                     f"Sifariş: #{order_id}\n"
-                    f"Ümumi məbləğ: {order['price']} AZN\n"
-                    f"Komissiya məbləği: {admin_fee:.2f} AZN\n\n"
-                    f"Müştəridən ödənişi aldıqdan sonra, 24 saat ərzində komissiya məbləğini "
-                    f"admin kartına köçürməlisiniz.\n\n"
-                    f"Admin kart məlumatları:\n"
-                    f"Kart nömrəsi: 4169 7388 5555 6666\n"
-                    f"Sahibi: USTABOT LLC\n\n"
-                    f"⚠️ *Diqqət*: 24 saat ərzində komissiya ödənişi edilməzsə, "
-                    f"hesabınız avtomatik bloklanacaq və məbləğin 15%-i həcmində əlavə cərimə tətbiq ediləcək.",
+                    f"Ümumi məbləğ: {order['price']} AZN\n\n"
+                    f"Müştəridən ödənişi aldıqdan sonra sifarişin tamamlandığını təsdiqləyin.",
                     parse_mode="Markdown"
-                )
-                
-                # Add payment confirmation button
-                keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton(
-                    "✅ Ödənişi təsdiqlə", 
-                    callback_data=f"confirm_art_payment_{order_id}"
-                ))
-                
-                await callback_query.message.answer(
-                    "Komissiya ödənişini tamamladıqdan sonra, bu düyməni basaraq təsdiq edin:",
-                    reply_markup=keyboard
                 )
                 
                 # Notify customer about payment details
@@ -3056,55 +3024,7 @@ def register_handlers(dp):
             
             await callback_query.answer()
         
-    @dp.callback_query_handler(lambda c: c.data.startswith('confirm_art_payment_'))
-    async def confirm_art_payment(callback_query: types.CallbackQuery, state: FSMContext):
-        """Confirm admin payment for cash orders"""
-        try:
-            # Extract order ID from callback data
-            order_id = int(callback_query.data.split('_')[-1])
-            
-            # Save order ID to state
-            await state.update_data(order_id=order_id)
-            
-            # Set state to waiting_for_receipt
-            await AdminPaymentStates.waiting_for_receipt.set()
-            
-            # Ask for receipt
-            await callback_query.message.answer(
-                "📸 Zəhmət olmasa, admin karta etdiyiniz ödənişin qəbzini şəkil olaraq göndərin.\n\n"
-                "Bu, ödənişin təsdiqlənməsi üçün lazımdır. Şəkil aydın və oxunaqlı olmalıdır."
-            )
-            
-            await callback_query.answer()
-            
-        except Exception as e:
-            logger.error(f"Error in confirm_art_payment: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await callback_query.answer()
 
-    from aiogram.types import CallbackQuery
-
-    @dp.callback_query_handler(lambda c: c.data.startswith('confirm_art_payment_'))
-    async def confirm_artisan_commission_payment(callback_query: CallbackQuery):
-        try:
-            order_id = int(callback_query.data.split('_')[-1])
-            user_id = callback_query.from_user.id
-
-            from db import set_admin_payment_completed
-            success = set_admin_payment_completed(order_id)
-
-            if success:
-                await callback_query.answer("✅ Komissiya ödənişi uğurla təsdiqləndi.", show_alert=True)
-                await callback_query.message.edit_reply_markup(reply_markup=None)
-                await callback_query.message.answer("Təşəkkür edirik! Komissiya ödənişiniz təsdiqləndi.")
-            else:
-                await callback_query.answer("❌ Xəta baş verdi. Zəhmət olmasa yenidən cəhd edin.", show_alert=True)
-
-        except Exception as e:
-            logging.error(f"Xəta: confirm_artisan_commission_payment: {e}")
-            await callback_query.answer("❌ Gözlənilməz xəta baş verdi.", show_alert=True)
 
 
     # Photo handler for admin payment receipt
@@ -3972,8 +3892,7 @@ def register_handlers(dp):
             await message.answer(
                 "✅ Ödəniş məlumatlarınız uğurla qeydə alındı!\n\n"
                 f"Kart nömrəsi: {card_number}\n"
-                f"Kart sahibi: {card_holder}\n\n"
-                "İndi müştərilər sizdən sifariş verərkən kartla ödəniş edə bilərlər.",
+                f"Kart sahibi: {card_holder}",
                 reply_markup=types.ReplyKeyboardRemove()
             )
             
@@ -4551,6 +4470,10 @@ def register_handlers(dp):
                 await callback_query.answer()
                 return
             
+            # Cancel any pending delay reminders for this order
+            from db import cancel_delay_reminder
+            cancel_delay_reminder(order_id)
+            
             # Import notification service
             from order_status_service import notify_customer_about_arrival
             
@@ -4717,13 +4640,6 @@ def register_handlers(dp):
             admin_fee = round(price * commission_rate, 2)
             artisan_amount = price - admin_fee
             
-            # Create admin payment keyboard
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(
-                "✅ Komissiya ödənişini etdim", 
-                callback_data=f"art_payment_made_{order_id}"
-            ))
-            
             # Notify customer
             customer = get_customer_by_id(order['customer_id'])
             if customer and customer.get('telegram_id'):
@@ -4735,7 +4651,7 @@ def register_handlers(dp):
                     parse_mode="Markdown"
                 )
             
-            # Update order status
+            # Update order status to completed immediately
             update_order_status(order_id, "completed")
 
             # Send review request to customer
@@ -4746,19 +4662,12 @@ def register_handlers(dp):
             except Exception as review_error:
                 logger.error(f"Error sending review request: {review_error}", exc_info=True)
             
-            # Notify artisan about commission payment
+            # Notify artisan that order is completed
             await callback_query.message.answer(
                 f"✅ *Ödəniş təsdiqləndi*\n\n"
                 f"Sifariş: #{order_id}\n"
-                f"Ümumi məbləğ: {price} AZN\n"
-                f"Komissiya ({int(commission_rate*100)}%): {admin_fee} AZN\n"
-                f"Sizə qalan məbləğ: {artisan_amount} AZN\n\n"
-                f"İndi zəhmət olmasa, komissiya məbləğini ({admin_fee} AZN) "
-                f"aşağıdakı kart hesabına köçürün:\n\n"
-                f"Kart nömrəsi: {ADMIN_CARD_NUMBER}\n"
-                f"Sahibi: {ADMIN_CARD_HOLDER}\n\n"
-                f"Ödənişi etdikdən sonra 'Komissiya ödənişini etdim' düyməsini basın.",
-                reply_markup=keyboard,
+                f"Ümumi məbləğ: {price} AZN\n\n"
+                f"Sifarişiniz tamamlandı. Təşəkkür edirik!",
                 parse_mode="Markdown"
             )
             
@@ -4822,143 +4731,7 @@ def register_handlers(dp):
 
 
 
-    @dp.callback_query_handler(lambda c: c.data.startswith('art_payment_made_'))
-    async def art_payment_made(callback_query: types.CallbackQuery, state: FSMContext):
-        """Handle when artisan indicates payment to admin card"""
-        try:
-            # Extract order ID from callback data
-            order_id = int(callback_query.data.split('_')[-1])
-            logger.info(f"Artisan indicated admin payment for order {order_id}")
-            
-            # Get order details to verify it exists
-            order = get_order_details(order_id)
-            if not order:
-                await callback_query.message.answer(
-                    "❌ Sifariş tapılmadı. Silinmiş və ya ləğv edilmiş ola bilər."
-                )
-                await callback_query.answer()
-                return
-            
-            # Set state for receipt upload
-            await PaymentReceiptState.waiting_for_receipt.set()
-            
-            # Store order ID in state
-            async with state.proxy() as data:
-                data['order_id'] = order_id
-            
-            # Ask for payment receipt - clear and direct instruction
-            await callback_query.message.answer(
-                "📸 Zəhmət olmasa, admin karta etdiyiniz komissiya ödənişinin qəbzini göndərin.\n\n"
-                "Bu, ödənişin təsdiqlənməsi üçün lazımdır. Şəkil aydın və oxunaqlı olmalıdır.\n\n"
-                "⚠️ QEYD: İndi birbaşa şəkil göndərin, başqa düymə basmayın."
-            )
-            
-            await callback_query.answer()
-            
-        except Exception as e:
-            logger.error(f"Error in art_payment_made: {e}", exc_info=True)
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            # Show menu to prevent UI getting stuck
-            await show_artisan_menu(callback_query.message)
-            await callback_query.answer()
 
-    # Add this handler specifically for payment receipt photos
-    @dp.message_handler(content_types=types.ContentType.PHOTO, state=PaymentReceiptState.waiting_for_receipt)
-    async def process_payment_receipt(message: types.Message, state: FSMContext):
-        """Process payment receipt photos when in waiting_for_receipt state"""
-        try:
-            # Get order ID from state
-            async with state.proxy() as data:
-                order_id = data.get('order_id')
-            
-            if not order_id:
-                await message.answer("❌ Xəta baş verdi. Zəhmət olmasa, yenidən başlayın.")
-                await state.finish()
-                return
-            
-            # Get the highest quality photo
-            photo = message.photo[-1]
-            file_id = photo.file_id
-            
-            logger.info(f"Received payment receipt for order {order_id}, file_id: {file_id}")
-            
-            # Direct database update for payment receipt
-            conn = None
-            try:
-                conn = get_connection()
-                cursor = conn.cursor()
-                
-                # First update the order_payments table
-                cursor.execute(
-                    """
-                    UPDATE order_payments 
-                    SET receipt_file_id = %s,
-                        receipt_uploaded_at = CURRENT_TIMESTAMP,
-                        payment_status = 'pending',
-                        payment_date = CURRENT_TIMESTAMP,
-                        admin_payment_completed = FALSE,
-                        receipt_verified = FALSE
-                    WHERE order_id = %s
-                    """,
-                    (file_id, order_id)
-                )
-                
-                # Also update the order payment status
-                cursor.execute(
-                    "UPDATE orders SET payment_status = 'paid' WHERE id = %s",
-                    (order_id,)
-                )
-                
-                conn.commit()
-                logger.info(f"Successfully updated payment receipt for order {order_id}")
-                
-                # Verify the update worked
-                cursor.execute("SELECT receipt_file_id FROM order_payments WHERE order_id = %s", (order_id,))
-                receipt_check = cursor.fetchone()
-                
-                if receipt_check and receipt_check[0]:
-                    logger.info(f"Verified receipt_file_id is set for order {order_id}")
-                    update_success = True
-                else:
-                    logger.error(f"Failed to verify receipt_file_id for order {order_id}")
-                    update_success = False
-                    
-            except Exception as db_error:
-                if conn:
-                    conn.rollback()
-                logger.error(f"Database error in process_payment_receipt: {db_error}", exc_info=True)
-                update_success = False
-            finally:
-                if conn:
-                    conn.close()
-            
-            # Send confirmation to user
-            if update_success:
-                await message.answer(
-                    "✅ Ödəniş qəbzi uğurla qeydə alındı!\n\n"
-                    "Sizin komissiya ödənişiniz qeydə alındı. Təşəkkür edirik!",
-                    reply_markup=types.ReplyKeyboardRemove()
-                )
-            else:
-                await message.answer(
-                    "⚠️ Qəbzin qeydə alınmasında problem yaşandı.\n\n"
-                    "Amma narahat olmayın, qəbzi aldıq və manuel yolla qeydə alacağıq.",
-                    reply_markup=types.ReplyKeyboardRemove()
-                )
-            
-            # Clear state and show main menu
-            await state.finish()
-            await show_artisan_menu(message)
-            
-        except Exception as e:
-            logger.error(f"Error in process_payment_receipt: {e}", exc_info=True)
-            await message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
-            await show_artisan_menu(message)
 
 
     # Hem customer hem de artisan handler'a eklenebilir
@@ -5008,203 +4781,7 @@ def register_handlers(dp):
             await message.answer(f"Xəta: {str(e)}")
 
 
-    @dp.callback_query_handler(lambda c: c.data.startswith('resend_commission_'))
-    async def resend_commission_receipt(callback_query: types.CallbackQuery, state: FSMContext):
-        """Handle commission receipt re-upload request"""
-        try:
-            # Extract order ID from callback data
-            order_id = int(callback_query.data.split('_')[-1])
-            
-            # Set context for receipt upload
-            telegram_id = callback_query.from_user.id
-            
-            # Get admin fee for the order
-            order = get_order_details(order_id)
-            if not order:
-                await callback_query.message.answer(
-                    "❌ Sifariş məlumatları tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-                )
-                await callback_query.answer()
-                return
-                
-            admin_fee = order.get('admin_fee', 0)
 
-            # Save order_id to state
-            await state.update_data(order_id=order_id)
-
-            # Set state to waiting for receipt
-            await PaymentReceiptState.waiting_for_receipt.set()
-            
-            # Log the state
-            logger.info(f"Set state to waiting_for_receipt for user {callback_query.from_user.id}, order {order_id}")
-            
-            await callback_query.message.answer(
-                f"📸 Zəhmət olmasa, komissiya ödənişinin ({admin_fee} AZN) qəbzini yenidən göndərin.\n\n"
-                f"Şəkil aydın və oxunaqlı olmalıdır. Ödəniş məbləği, tarix və kart məlumatları görünməlidir."
-            )
-            
-            await callback_query.answer()
-            
-        except Exception as e:
-            logger.error(f"Error in resend_commission_receipt: {e}", exc_info=True)
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await callback_query.answer()
-
-    
-
-    # Sonra, spesifik state-li şəkil emalcısı əlavə edək:
-
-    @dp.message_handler(
-        content_types=types.ContentType.PHOTO, 
-        state=PaymentReceiptState.waiting_for_receipt
-    )
-    async def process_commission_receipt(message: types.Message, state: FSMContext):
-        """Process commission receipt photos when in waiting_for_receipt state"""
-        try:
-            # Get data from state
-            state_data = await state.get_data()
-            order_id = state_data.get('order_id')
-            
-            if not order_id:
-                logger.error("No order_id found in state")
-                await message.answer("❌ Məlumat tapılmadı. Zəhmət olmasa yenidən cəhd edin.")
-                await state.finish()
-                return
-            
-            logger.info(f"Received commission receipt for order {order_id}")
-            
-            # Get artisan ID
-            telegram_id = message.from_user.id
-            artisan_id = get_artisan_by_telegram_id(telegram_id)
-            
-            if not artisan_id:
-                logger.error(f"Artisan not found for telegram_id {telegram_id}")
-                await message.answer("❌ Usta məlumatları tapılmadı.")
-                await state.finish()
-                return
-            
-            # Get the highest quality photo
-            photo = message.photo[-1]
-            file_id = photo.file_id
-            
-            # Update database
-            conn = None
-            success = False
-            
-            try:
-                conn = get_connection()
-                cursor = conn.cursor()
-                
-                # Update order_payments table
-                cursor.execute(
-                    """
-                    UPDATE order_payments 
-                    SET receipt_file_id = %s,
-                        receipt_uploaded_at = CURRENT_TIMESTAMP,
-                        receipt_verified = FALSE,  -- Set FALSE for admin visibility
-                        payment_status = 'pending',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE order_id = %s
-                    RETURNING id
-                    """,
-                    (file_id, order_id)
-                )
-                
-                result = cursor.fetchone()
-                logger.info(f"Database update result: {result}")
-                
-                if result:
-                    # Try to add entry to receipt_verification_history
-                    try:
-                        cursor.execute(
-                            """
-                            INSERT INTO receipt_verification_history 
-                            (order_id, is_verified, attempt_number, verified_at)
-                            VALUES (%s, FALSE, (
-                                SELECT COALESCE(MAX(attempt_number), 0) + 1 
-                                FROM receipt_verification_history 
-                                WHERE order_id = %s
-                            ), CURRENT_TIMESTAMP)
-                            """,
-                            (order_id, order_id)
-                        )
-                    except Exception as history_error:
-                        logger.error(f"Error inserting into receipt_verification_history: {history_error}")
-                        # Continue even if history update fails
-                    
-                    # Clear scheduled block
-                    try:
-                        cursor.execute(
-                            """
-                            INSERT INTO notification_log (notification_type, target_id, created_at)
-                            VALUES ('commission_resubmitted', %s, CURRENT_TIMESTAMP)
-                            """,
-                            (order_id,)
-                        )
-                    except Exception as notify_error:
-                        logger.error(f"Error inserting into notification_log: {notify_error}")
-                        # Continue even if notification log fails
-                    
-                    success = True
-                
-                conn.commit()
-                
-            except Exception as db_error:
-                logger.error(f"Database error in process_commission_receipt: {db_error}", exc_info=True)
-                if conn:
-                    conn.rollback()
-            finally:
-                if conn:
-                    conn.close()
-            
-            if success:
-                # Send confirmation to artisan
-                await message.answer(
-                    "✅ Komissiya qəbzi uğurla göndərildi!\n\n"
-                    "Qəbziniz yoxlanma üçün admin heyətinə göndərildi. "
-                    "Bloklanma prosesi dayandırıldı, ancaq qəbzin təsdiqlənməsi lazımdır.",
-                    reply_markup=types.ReplyKeyboardRemove()
-                )
-                
-                # Send detailed notification to artisan
-                from notification_service import notify_artisan_commission_receipt_received
-                await notify_artisan_commission_receipt_received(artisan_id, order_id)
-                
-                # Notify admins for review
-                for admin_id in BOT_ADMINS:
-                    try:
-                        await bot.send_photo(
-                            chat_id=admin_id,
-                            photo=file_id,
-                            caption=f"🔄 *Yenidən göndərilmiş komissiya qəbzi*\n\n"
-                                f"Sifariş: #{order_id}\n"
-                                f"Usta ID: {artisan_id}\n\n"
-                                f"Bu qəbz yenidən yoxlanmalıdır. Əvvəlki qəbz rədd edilmişdi.",
-                            reply_markup=InlineKeyboardMarkup().add(
-                                InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"verify_receipt_{order_id}_true"),
-                                InlineKeyboardButton("❌ Rədd et", callback_data=f"verify_receipt_{order_id}_false")
-                            ),
-                            parse_mode="Markdown"
-                        )
-                        logger.info(f"Admin notification sent to {admin_id}")
-                    except Exception as admin_error:
-                        logger.error(f"Error notifying admin {admin_id}: {admin_error}")
-            else:
-                await message.answer(
-                    "❌ Qəbz göndərilərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-                )
-            
-            # Always clear state
-            await state.finish()
-            
-        except Exception as e:
-            logger.error(f"Error in process_commission_receipt: {e}", exc_info=True)
-            await message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await state.finish()
 
 
 
@@ -5219,25 +4796,7 @@ def register_handlers(dp):
         lambda c: c.data.startswith('artisan_deny_cash_')
     )
     
-    dp.register_callback_query_handler(
-        art_payment_made,
-        lambda c: c.data.startswith('art_payment_made_')
-    )
 
-    dp.register_callback_query_handler(
-    confirm_artisan_commission_payment,
-    lambda c: c.data.startswith('confirm_art_payment_')
-    )
-
-    # register_handlers funksiyasına bu yeni handleri əlavə etməyi unutmayın:
-
-    # Register payment receipt handler for commission
-    dp.register_message_handler(
-        process_commission_receipt,
-        content_types=types.ContentType.PHOTO,
-        state=PaymentReceiptState.waiting_for_receipt
-    )
-    # artisan_handler.py içine ekleyeceğimiz kod:
 
 
     # Əmr bələdçisi funksiyasını əlavə et
@@ -5373,8 +4932,7 @@ def register_handlers(dp):
                     # Show confirmation to artisan
                     await message.answer(
                         f"✅ Qiymət uğurla təyin edildi: {price} AZN\n\n"
-                        f"Komissiya ({int(commission_rate*100)}%): {admin_fee:.2f} AZN\n"
-                        f"Sizə qalacaq məbləğ: {artisan_amount:.2f} AZN\n\n"
+                        f"Məbləğ: {artisan_amount:.2f} AZN\n\n"
                         f"Müştəriyə qiymət təklifi göndərildi. Qəbul edildiyi zaman sizə bildiriş gələcək."
                     )
                     

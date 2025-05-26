@@ -33,11 +33,11 @@ COMMISSION_RATES = {
     },
     "medium": {  # 50-200 AZN
         "threshold": 200,
-        "rate": 1
+        "rate": 0
     },
     "high": {  # 200+ AZN
         "threshold": float('inf'),
-        "rate": 2
+        "rate": 0
     }
 }
 

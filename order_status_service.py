@@ -262,48 +262,77 @@ async def notify_customer_about_arrival(order_id, status):
         logger.error(f"Error in notify_customer_about_arrival: {e}")
         return False
 
-async def handle_delayed_arrival(order_id):
-    """Ustanın gecikmesi durumunu yönetir"""
+async def send_delay_reminder(order_id):
+    """Send a 30-minute delay reminder to the artisan"""
     try:
-        # Wait for 30 minutes
-        await asyncio.sleep(30 * 60)  # 30 minutes
-        
-        # Check if order is still active
+        # Get order details
         order = get_order_details(order_id)
-        if not order or order['status'] != 'accepted':
-            logger.info(f"Order {order_id} is no longer active or not in accepted state. Skipping delayed arrival check.")
-            return
+        if not order:
+            logger.error(f"Order {order_id} not found for delay reminder")
+            return False
+            
+        # Check if order is still active and in accepted state
+        if order['status'] != 'accepted':
+            logger.info(f"Order {order_id} is no longer in accepted state. Skipping delay reminder.")
+            return False
         
         # Get artisan details
         artisan = wrap_get_dict_function(get_artisan_by_id)(order['artisan_id'])
         if not artisan:
             logger.error(f"Artisan not found for order {order_id}")
-            return
+            return False
         
         telegram_id = artisan.get('telegram_id')
         if not telegram_id:
             logger.error(f"Telegram ID not found for artisan {order_id}")
-            return
+            return False
         
         # Create arrival confirmation keyboard
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(
-            InlineKeyboardButton("✅ Bəli, çatmışam", callback_data=f"arrived_{order_id}"),
-            InlineKeyboardButton("❌ Çata bilmirəm", callback_data=f"cannot_arrive_{order_id}")
+            InlineKeyboardButton("📍 Məkana çatdım", callback_data=f"arrived_{order_id}")
         )
         
-        # Send arrival check message
+        # Send delay reminder message
         await bot.send_message(
             chat_id=telegram_id,
-            text=f"⚠️ *Müddət bitdi*\n\n"
-                 f"Sifariş #{order_id} üçün 30 dəqiqəlik müddət bitdi.\n"
-                 f"Müştərinin məkanına çatmısınızmı?",
+            text=f"⏰ *30 dəqiqəlik xatırlatma*\n\n"
+                 f"Sifariş #{order_id} üçün 30 dəqiqə keçdi.\n"
+                 f"Müştərinin məkanına çatmısınızmı?\n\n"
+                 f"Çatmısınızsa, aşağıdakı düyməni basın:",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
         
+        logger.info(f"Delay reminder sent successfully for order {order_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error sending delay reminder for order {order_id}: {e}")
+        return False
+
+async def handle_delayed_arrival(order_id):
+    """Handle artisan delay by creating a database-scheduled reminder"""
+    try:
+        import datetime
+        from db import create_delay_reminder
+        
+        # Calculate execution time (30 minutes from now)
+        execution_time = datetime.datetime.now() + datetime.timedelta(minutes=30)
+        
+        # Create delay reminder in database
+        task_id = create_delay_reminder(order_id, execution_time)
+        
+        if task_id:
+            logger.info(f"Scheduled delay reminder for order {order_id} at {execution_time}")
+        else:
+            logger.error(f"Failed to schedule delay reminder for order {order_id}")
+        
+        return task_id is not None
+        
     except Exception as e:
         logger.error(f"Error in handle_delayed_arrival: {e}")
+        return False
 
 async def handle_arrival_warning(order_id):
     """Ustanın varış uyarısını yönetir"""
@@ -382,7 +411,7 @@ async def block_artisan_for_no_show(order_id):
         # Block artisan
         from db import block_artisan
         block_reason = f"Sifariş #{order_id} üçün məkana gəlmədiniz"
-        required_payment = 30.0  # Default penalty amount
+        required_payment = 10.0  # Default penalty amount
         
         success = block_artisan(artisan_id, block_reason, required_payment)
         
@@ -546,7 +575,7 @@ async def final_price_warning(telegram_id, order_id):
         artisan_id = order['artisan_id']
         from db import block_artisan
         block_reason = f"Sifariş #{order_id} üçün qiyməti təyin etmədiniz"
-        required_payment = 30.0  # Default penalty amount
+        required_payment = 10.0  # Default penalty amount
         
         success = block_artisan(artisan_id, block_reason, required_payment)
         

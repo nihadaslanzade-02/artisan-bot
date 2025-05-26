@@ -210,8 +210,6 @@ async def notify_artisan_about_payment_method(order_id, payment_method):
                 f"💳 *Kartla ödəniş seçildi*\n\n"
                 f"Sifariş: #{order_id}\n"
                 f"Məbləğ: {price} AZN\n"
-                f"Komissiya ({int(commission_rate*100)}%): {admin_fee} AZN\n"
-                f"Sizə qalacaq: {artisan_amount} AZN\n\n"
                 f"Müştəri ödənişi kart ilə edəcək. "
                 f"Ödəniş tamamlandıqdan sonra 24 saat ərzində hesabınıza köçürüləcək."
             )
@@ -227,16 +225,7 @@ async def notify_artisan_about_payment_method(order_id, payment_method):
             message_text = (
                 f"💵 *Nağd ödəniş seçildi*\n\n"
                 f"Sifariş: #{order_id}\n"
-                f"Ümumi məbləğ: {price} AZN\n"
-                f"Komissiya ({int(commission_rate*100)}%): {admin_fee} AZN\n"
-                f"Sizə qalacaq: {artisan_amount} AZN\n\n"
-                f"Müştəridən ödənişi aldıqdan sonra, 24 saat ərzində komissiya məbləğini "
-                f"admin kartına köçürməlisiniz.\n\n"
-                f"Admin kart məlumatları:\n"
-                f"Kart nömrəsi: {ADMIN_CARD_NUMBER}\n"
-                f"Sahibi: {ADMIN_CARD_HOLDER}\n\n"
-                f"⚠️ *Diqqət*: 24 saat ərzində komissiya ödənişi edilməzsə, "
-                f"hesabınız avtomatik bloklanacaq və məbləğin 15%-i həcmində əlavə cərimə tətbiq ediləcək."
+                f"Ümumi məbləğ: {price} AZN"
             )
             
             reply_markup = None
