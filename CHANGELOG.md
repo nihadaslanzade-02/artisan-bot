@@ -68,3 +68,16 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 ### Fixed
 - all the problems related with 'Back' button,
 - some fixed in admin panel"
+
+## [v1.2.0] – 2025-05-27
+### Fixed
+- the bug in scheduler for the delaying of artisan in 30 minutes
+- finishing the order in which the customer accepts an apologise message from bot because of no-showed artisan
+- the problem in rejecting the price and returning to customer menu automatically
+- checking receipts in admin panel
+
+## Changed
+- all comissions eliminated because of being new in market
+
+## Added
+- added a new service named 'Təmizlik'
