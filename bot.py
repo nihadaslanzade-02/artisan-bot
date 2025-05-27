@@ -171,8 +171,8 @@ async def help_command(message: types.Message):
             "• Probleminiz haqqında qısa məlumat yazın\n"
             "• Sifarişi təsdiqləyin\n\n"
             
-            "*Ustalar və təmizlikçilər üçün:*\n"
-            "• 'Usta/Təmizlikçi' seçin\n"
+            "*Ustalar üçün:*\n"
+            "• '🛠 Usta/Təmizlikçi' seçin\n"
             "• İlk dəfədirsə, qeydiyyatdan keçin\n"
             "• 'Aktiv sifarişlər' bölməsində müştəri sifarişlərini görün\n"
             "• Sifarişləri qəbul edin və ya ləğv edin\n\n"
@@ -1149,7 +1149,7 @@ async def show_customers_list(message):
         
         # Get recent customers with ratings
         query = """
-            SELECT id, name, phone, city, created_at, active
+            SELECT id, name, phone, created_at, active
             FROM customers
             ORDER BY created_at DESC
             LIMIT 20
