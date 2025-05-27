@@ -81,3 +81,7 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 
 ## Added
 - added a new service named 'Təmizlik'
+
+## [v1.2.1] – 2025-05-27
+### Changed
+- name and city are not required from user in signing up
