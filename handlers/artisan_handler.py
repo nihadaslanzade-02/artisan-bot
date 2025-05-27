@@ -1091,17 +1091,16 @@ def register_handlers(dp):
             )
             
             if success:
-                # Show payment options to artisan
+                # Show payment options to artisan - only cash payment
                 keyboard = InlineKeyboardMarkup(row_width=1)
                 keyboard.add(
-                    InlineKeyboardButton("💳 Kartla ödəniş", callback_data=f"payment_card_{order_id}"),
-                    InlineKeyboardButton("💵 Nağd ödəniş", callback_data=f"payment_cash_{order_id}")
+                    InlineKeyboardButton("💵 Ödəniş", callback_data=f"payment_cash_{order_id}")
                 )
                 
                 await message.answer(
                     f"✅ Qiymət uğurla təyin edildi: {price} AZN\n\n"
                     f"Məbləğ: {artisan_amount:.2f} AZN\n\n"
-                    f"İndi müştəriyə ödəniş üsulunu seçməyi təklif edin:",
+                    f"Müştəriyə ödəniş bildirişi göndəriləcək:",
                     reply_markup=keyboard
                 )
                 
@@ -1226,7 +1225,7 @@ def register_handlers(dp):
                 
                 # Inform artisan about the process
                 await callback_query.message.answer(
-                    f"💵 *Nağd ödəniş seçildi*\n\n"
+                    f"💵 *Ödəniş olunur...*\n\n"
                     f"Sifariş: #{order_id}\n"
                     f"Ümumi məbləğ: {order['price']} AZN\n\n"
                     f"Müştəridən ödənişi aldıqdan sonra sifarişin tamamlandığını təsdiqləyin.",
@@ -3504,7 +3503,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863 (Nihad Aslanzade)\n"
+                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",

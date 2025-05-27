@@ -2271,8 +2271,8 @@ def register_handlers(dp):
             if artisan and artisan.get('telegram_id'):
                 await bot.send_message(
                     chat_id=artisan['telegram_id'],
-                    text=f"✅ *Nağd ödəniş təsdiqləndi*\n\n"
-                        f"Müştəri sifariş #{order_id} üçün nağd ödənişi tamamladığını təsdiqlədi.\n\n"
+                    text=f"✅ *Ödəniş təsdiqləndi*\n\n"
+                        f"Müştəri sifariş #{order_id} üçün ödənişi tamamladığını təsdiqlədi.\n\n"
                         f"Sifarişiniz tamamlandı. Təşəkkür edirik!",
                     parse_mode="Markdown"
                 )
@@ -2581,8 +2581,8 @@ def register_handlers(dp):
                 
                 await bot.send_message(
                     chat_id=artisan['telegram_id'],
-                    text=f"💵 *Nağd ödəniş bildirişi*\n\n"
-                        f"Müştəri sifariş #{order_id} üçün nağd ödəniş etdiyini bildirdi.\n"
+                    text=f"💵 *Ödəniş bildirişi*\n\n"
+                        f"Müştəri sifariş #{order_id} üçün ödəniş etdiyini bildirdi.\n"
                         f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                         f"Zəhmət olmasa, ödənişi aldığınızı təsdiqləyin:",
                     reply_markup=keyboard,
@@ -2671,13 +2671,13 @@ def register_handlers(dp):
             # Create payment confirmation keyboard
             keyboard = InlineKeyboardMarkup()
             keyboard.add(InlineKeyboardButton(
-                "✅ Nağd ödənişi etdim", 
+                "✅ Ödənişi etdim", 
                 callback_data=f"cash_payment_made_{order_id}"
             ))
             
             # Send cash payment notification to customer
             await callback_query.message.answer(
-                f"💵 *Nağd ödəniş*\n\n"
+                f"💵 *Ödəniş*\n\n"
                 f"Sifariş: #{order_id}\n"
                 f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                 f"Zəhmət olmasa, ödənişi ustaya nağd şəkildə edin və "
@@ -2767,7 +2767,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER} ({ADMIN_CARD_HOLDER})\n"
+                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER}\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",
@@ -2982,7 +2982,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER} ({ADMIN_CARD_HOLDER})\n"
+                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER}\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",
