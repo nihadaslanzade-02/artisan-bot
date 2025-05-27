@@ -85,3 +85,7 @@ Bütün əhəmiyyətli dəyişikliklər – Semantic Versioning, Keep a Changelo
 ## [v1.2.1] – 2025-05-27
 ### Changed
 - name and city are not required from user in signing up
+
+## [v1.2.2] – 2025-05-28
+### Changed
+- only cash payment is made available
