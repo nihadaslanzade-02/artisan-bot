@@ -16,7 +16,7 @@ async def start(message: types.Message):
     is_admin = user_id in BOT_ADMINS
     
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row("👤 Müştəriyəm", "👷 Ustayam")  # İki düyməni yan-yana yerləşdir
+    keyboard.row("👤 Müştəriyəm", "🛠 Usta/Təmizlikçi")  # İki düyməni yan-yana yerləşdir
     keyboard.row("ℹ️ Əmr bələdçisi")  # Ayrı sətirdə Əmr bələdçisi
     
     if is_admin:

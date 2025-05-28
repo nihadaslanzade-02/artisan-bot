@@ -112,9 +112,9 @@ def decrypt_list_data(data_list, mask=False):
 
 def wrap_create_customer(original_func):
     """Wrap create_customer function to encrypt sensitive data"""
-    def wrapper(telegram_id, name, phone=None):
+    def wrapper(telegram_id, name, phone=None, city=None):
         # Artıq db.py-də encrypt olunur, burada birbaşa orijinal funksiyanı çağır
-        return original_func(telegram_id, name, phone)
+        return original_func(telegram_id, name, phone, city)
     return wrapper
 
 def wrap_create_artisan(original_func):

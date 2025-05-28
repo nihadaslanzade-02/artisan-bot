@@ -32,7 +32,10 @@ logger = logging.getLogger(__name__)
 
 # Define states for artisan registration
 class ArtisanRegistrationStates(StatesGroup):
+    confirming_name = State()
+    entering_name = State()
     entering_phone = State()
+    entering_city = State()
     selecting_service = State()
     sharing_location = State()
     confirming_registration = State()
@@ -285,45 +288,28 @@ def register_handlers(dp):
                 "👋 Xoş gəlmisiniz! Usta qeydiyyatı üçün zəhmət olmasa, məlumatlarınızı təqdim edin."
             )
             
-            # Automatically use Telegram name without asking for confirmation
-            # Generate a user-specific name using their Telegram profile
-            user_id = message.chat.id
-
-            # Try to get the user's real name first
-            if message.chat.first_name:
-                if message.chat.last_name:
-                    full_name = f"{message.chat.first_name} {message.chat.last_name}"
-                else:
-                    full_name = message.from_user.first_name
-            # Then try username if no real name is available
-            elif message.chat.username and len(message.chat.username.strip()) > 0:
-                full_name = message.chat.username
-            # Finally, generate a random name as last resort
-            else:
-                try:
-                    import random
-                    random.seed(user_id)  # Use user ID as seed
-                    unique_number = random.randint(10000, 99999)
-                    full_name = f"Usta{unique_number}"
-                except Exception as e:
-                    # Fallback if random fails
-                    full_name = f"Usta{user_id % 100000}"
+            # Pre-fill name from Telegram profile
+            full_name = message.chat.full_name
             
-            # Log the name being used
-            logger.info(f"Artisan registration - User data - ID: {message.chat.id}, username: {message.chat.username}, first_name: {message.chat.first_name}, last_name: {message.chat.last_name}")
-            logger.info(f"Using name for artisan registration: {full_name}")
-            
-            # Store the name directly and move to phone number collection
-            async with state.proxy() as data:
-                data['name'] = full_name
-            
-            # Move directly to phone number collection
-            await message.answer(
-                f"👤 Telegram adınız ({full_name}) qeydiyyat üçün istifadə ediləcək.\n\n"
-                "📞 Zəhmət olmasa, əlaqə nömrənizi daxil edin (məsələn: +994501234567):"
+            # Create inline keyboard for name confirmation
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(
+                InlineKeyboardButton("✅ Bəli, adımı təsdiqləyirəm", callback_data="confirm_artisan_name"),
+                InlineKeyboardButton("🖊 Xeyr, başqa ad daxil etmək istəyirəm", callback_data="change_artisan_name")
             )
             
-            await ArtisanRegistrationStates.entering_phone.set()
+            await message.answer(
+                f"👤 Telegram hesabınızda göstərilən adınız: *{full_name}*\n\n"
+                "Bu addan istifadə etmək istəyirsiniz?",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            # Store suggested name in state
+            async with state.proxy() as data:
+                data['suggested_name'] = full_name
+            
+            await ArtisanRegistrationStates.confirming_name.set()
             
         except Exception as e:
             logger.error(f"Error in start_registration: {e}")
@@ -333,11 +319,86 @@ def register_handlers(dp):
             await state.finish()
             await show_role_selection(message)
     
+    @dp.callback_query_handler(
+        lambda c: c.data in ["confirm_artisan_name", "change_artisan_name"],
+        state=ArtisanRegistrationStates.confirming_name
+    )
+    
+    async def process_name_confirmation(callback_query: types.CallbackQuery, state: FSMContext):
+        """Process artisan name confirmation"""
+        try:
+            if callback_query.data == "confirm_artisan_name":
+                # User confirmed the suggested name
+                data = await state.get_data()
+                suggested_name = data.get('suggested_name')
+                
+                # Store name in state
+                async with state.proxy() as data:
+                    data['name'] = suggested_name
+                
+                # Proceed to phone input
+                await ask_for_phone(callback_query.message)
+                await ArtisanRegistrationStates.entering_phone.set()
+            else:
+                # User wants to provide a different name
+                await callback_query.message.answer(
+                    "👤 Zəhmət olmasa, adınızı daxil edin:"
+                )
+                await ArtisanRegistrationStates.entering_name.set()
+            
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in process_name_confirmation: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(callback_query.message)
 
+    @dp.message_handler(state=ArtisanRegistrationStates.entering_name)
+    async def process_name_input(message: types.Message, state: FSMContext):
+        """Process artisan name input"""
+        try:
+            # Validate and store name
+            name = message.text.strip()
+            
+            if len(name) < 2 or len(name) > 50:
+                await message.answer(
+                    "❌ Ad ən azı 2, ən çoxu 50 simvol olmalıdır. Zəhmət olmasa, yenidən daxil edin:"
+                )
+                return
+            
+            # Store name in state
+            async with state.proxy() as data:
+                data['name'] = name
+            
+            # Proceed to phone input
+            await ask_for_phone(message)
+            await ArtisanRegistrationStates.entering_phone.set()
+            
+        except Exception as e:
+            logger.error(f"Error in process_name_input: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
+            
+    async def ask_for_phone(message: types.Message):
+        """Ask user for phone number"""
+        # Create keyboard with main menu return option
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(KeyboardButton("🏠 Əsas menyuya qayıt"))
+        
+        await message.answer(
+            "📞 Zəhmət olmasa, əlaqə nömrənizi daxil edin (məsələn: +994501234567):",
+            reply_markup=keyboard
+        )
     
     @dp.message_handler(state=ArtisanRegistrationStates.entering_phone)
     async def process_phone(message: types.Message, state: FSMContext):
-        """Process artisan phone input"""
+        """Process artisan phone number input"""
         try:
             # Check if user wants to return to main menu
             if message.text == "🏠 Əsas menyuya qayıt":
@@ -374,6 +435,44 @@ def register_handlers(dp):
             async with state.proxy() as data:
                 data['phone'] = phone
             
+            # Proceed to city input
+            await message.answer(
+                "🏙 Şəhərinizi daxil edin (məsələn: Bakı):"
+            )
+            
+            await ArtisanRegistrationStates.entering_city.set()
+            
+        except Exception as e:
+            logger.error(f"Error in process_phone: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
+    
+    @dp.message_handler(state=ArtisanRegistrationStates.entering_city)
+    async def process_city(message: types.Message, state: FSMContext):
+        """Process artisan city input"""
+        try:
+            # Check if user wants to return to main menu
+            if message.text == "🏠 Əsas menyuya qayıt":
+                await state.finish()
+                await show_role_selection(message)
+                return
+            
+            # Validate and store city
+            city = message.text.strip()
+            
+            if len(city) < 2 or len(city) > 50:
+                await message.answer(
+                    "❌ Şəhər adı ən azı 2, ən çoxu 50 simvol olmalıdır. Zəhmət olmasa, yenidən daxil edin:"
+                )
+                return
+            
+            # Store city in state
+            async with state.proxy() as data:
+                data['city'] = city
+            
             # Get available services
             services = get_services()
             
@@ -391,14 +490,12 @@ def register_handlers(dp):
             await ArtisanRegistrationStates.selecting_service.set()
             
         except Exception as e:
-            logger.error(f"Error in process_phone: {e}")
+            logger.error(f"Error in process_city: {e}")
             await message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
             await state.finish()
             await show_role_selection(message)
-    
-
     
     @dp.callback_query_handler(
         lambda c: c.data.startswith('artisan_service_'),
@@ -460,12 +557,15 @@ def register_handlers(dp):
                 data['latitude'] = latitude
                 data['longitude'] = longitude
                 data['location_name'] = location_name
-                # Always use city from location coordinates
-                data['city'] = city
+                
+                # If no city was provided earlier, use the one from location
+                if not data.get('city'):
+                    data['city'] = city
                 
                 # Create summary for confirmation
                 name = data['name']
                 phone = data['phone']
+                city = data['city']
                 service = data['service']
                 
                 location_display = location_name if location_name else "Paylaşılan məkan"
@@ -544,13 +644,13 @@ def register_handlers(dp):
                 # If already registered, use existing ID
                 artisan_id = existing_artisan_id
                 
-                # Update profile info with location data for both location and city fields
+                # Update profile info
                 update_artisan_profile(artisan_id, {
                     'name': name,
                     'phone': phone,
-                    'city': location_name,  # Use location name for city
+                    'city': city,
                     'service': service,
-                    'location': location_name,  # Use location name for location
+                    'location': location_name,
                     'profile_complete': True
                 })
                 
@@ -577,18 +677,17 @@ def register_handlers(dp):
                         artisan_id=artisan_id,
                         latitude=latitude,
                         longitude=longitude,
-                        location_name=location_name,
-                        city=location_name  # Ensure city is also updated with location data
+                        location_name=location_name
                     )
             else:
-                # Create new registration with location data for both location and city
+                # Create new registration
                 artisan_id = get_or_create_artisan(
                     telegram_id=telegram_id,
                     name=name,
                     phone=phone,
                     service=service,
-                    location=location_name,  # Use location name for location
-                    city=location_name,  # Use location name for city
+                    location=location_name,
+                    city=city,
                     latitude=latitude,
                     longitude=longitude
                 )
@@ -1091,16 +1190,17 @@ def register_handlers(dp):
             )
             
             if success:
-                # Show payment options to artisan - only cash payment
+                # Show payment options to artisan
                 keyboard = InlineKeyboardMarkup(row_width=1)
                 keyboard.add(
-                    InlineKeyboardButton("💵 Ödəniş", callback_data=f"payment_cash_{order_id}")
+                    InlineKeyboardButton("💳 Kartla ödəniş", callback_data=f"payment_card_{order_id}"),
+                    InlineKeyboardButton("💵 Nağd ödəniş", callback_data=f"payment_cash_{order_id}")
                 )
                 
                 await message.answer(
                     f"✅ Qiymət uğurla təyin edildi: {price} AZN\n\n"
                     f"Məbləğ: {artisan_amount:.2f} AZN\n\n"
-                    f"Müştəriyə ödəniş bildirişi göndəriləcək:",
+                    f"İndi müştəriyə ödəniş üsulunu seçməyi təklif edin:",
                     reply_markup=keyboard
                 )
                 
@@ -1225,7 +1325,7 @@ def register_handlers(dp):
                 
                 # Inform artisan about the process
                 await callback_query.message.answer(
-                    f"💵 *Ödəniş olunur...*\n\n"
+                    f"💵 *Nağd ödəniş seçildi*\n\n"
                     f"Sifariş: #{order_id}\n"
                     f"Ümumi məbləğ: {order['price']} AZN\n\n"
                     f"Müştəridən ödənişi aldıqdan sonra sifarişin tamamlandığını təsdiqləyin.",
@@ -3503,7 +3603,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863\n"
+                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863 (Nihad Aslanzade)\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",

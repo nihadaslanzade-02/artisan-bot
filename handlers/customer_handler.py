@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 # Define states for customer registration
 class CustomerRegistrationStates(StatesGroup):
+    confirming_name = State()
+    entering_name = State()
     entering_phone = State()
+    entering_city = State()
     confirming_registration = State()
 
 # Define states for the customer order flow
@@ -51,6 +54,7 @@ class ProfileManagementStates(StatesGroup):
     viewing_profile = State()
     updating_name = State()
     updating_phone = State()
+    updating_city = State()
 
 class OrderRatingState(StatesGroup):
     waiting_for_comment = State()
@@ -290,7 +294,7 @@ def register_handlers(dp):
                 "👋 Xoş gəlmisiniz! Müştəri qeydiyyatı üçün zəhmət olmasa, məlumatlarınızı təqdim edin."
             )
             
-            # Automatically use Telegram name without asking for confirmation
+            # Pre-fill name from Telegram profile with extra checks
             # Generate a user-specific name using their Telegram profile
             user_id = message.chat.id
 
@@ -315,20 +319,28 @@ def register_handlers(dp):
                     full_name = f"İstifadəçi{user_id % 100000}"
             
             # Log the name being used
+            # Add this near the name generation code
             logger.info(f"User data - ID: {message.chat.id}, username: {message.chat.username}, first_name: {message.chat.first_name}, last_name: {message.chat.last_name}")
-            logger.info(f"Using name for registration: {full_name}")
+            logger.info(f"Generated name for registration: {full_name}")
+        
             
-            # Store the name directly and move to phone number collection
-            async with state.proxy() as data:
-                data['name'] = full_name
-            
-            # Move directly to phone number collection
-            await message.answer(
-                f"👤 Telegram adınız ({full_name}) qeydiyyat üçün istifadə ediləcək.\n\n"
-                "📞 Zəhmət olmasa, əlaqə nömrənizi daxil edin (məsələn: +994501234567):"
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(
+                InlineKeyboardButton("✅ Bəli, adımı təsdiqləyirəm", callback_data="confirm_name"),
+                InlineKeyboardButton("🖊 Xeyr, başqa ad daxil etmək istəyirəm", callback_data="change_name")
             )
             
-            await CustomerRegistrationStates.entering_phone.set()
+            await message.answer(
+                f"👤 Telegram hesabınızda göstərilən adınız: *{full_name}*\n\n"
+                "Bu addan istifadə etmək istəyirsiniz?",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            async with state.proxy() as data:
+                data['suggested_name'] = full_name
+            
+            await CustomerRegistrationStates.confirming_name.set()
             
         except Exception as e:
             logger.error(f"Error in start_customer_registration: {e}")
@@ -338,7 +350,72 @@ def register_handlers(dp):
             await state.finish()
             await show_role_selection(message)
     
-
+    @dp.callback_query_handler(
+        lambda c: c.data in ["confirm_name", "change_name"],
+        state=CustomerRegistrationStates.confirming_name
+    )
+    async def process_name_confirmation(callback_query: types.CallbackQuery, state: FSMContext):
+        """Process name confirmation response"""
+        try:
+            if callback_query.data == "confirm_name":
+                # User confirmed the suggested name
+                data = await state.get_data()
+                suggested_name = data.get('suggested_name')
+                
+                async with state.proxy() as data:
+                    data['name'] = suggested_name
+                
+                # Move to phone number collection
+                await callback_query.message.answer(
+                    "📞 Zəhmət olmasa, əlaqə nömrənizi daxil edin (məsələn: +994501234567):"
+                )
+                await CustomerRegistrationStates.entering_phone.set()
+            else:
+                # User wants to enter a different name
+                await callback_query.message.answer(
+                    "👤 Zəhmət olmasa, adınızı daxil edin:"
+                )
+                await CustomerRegistrationStates.entering_name.set()
+            
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in process_name_confirmation: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(callback_query.message)
+    
+    @dp.message_handler(state=CustomerRegistrationStates.entering_name)
+    async def process_name_input(message: types.Message, state: FSMContext):
+        """Process customer name input"""
+        try:
+            # Validate and store name
+            name = message.text.strip()
+            
+            if len(name) < 2 or len(name) > 50:
+                await message.answer(
+                    "❌ Ad ən azı 2, ən çoxu 50 simvol olmalıdır. Zəhmət olmasa, yenidən daxil edin:"
+                )
+                return
+            
+            async with state.proxy() as data:
+                data['name'] = name
+            
+            # Move to phone number collection
+            await message.answer(
+                "📞 Zəhmət olmasa, əlaqə nömrənizi daxil edin (məsələn: +994501234567):"
+            )
+            await CustomerRegistrationStates.entering_phone.set()
+            
+        except Exception as e:
+            logger.error(f"Error in process_name_input: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
     
     @dp.message_handler(state=CustomerRegistrationStates.entering_phone)
     async def process_phone_input(message: types.Message, state: FSMContext):
@@ -364,14 +441,46 @@ def register_handlers(dp):
             
             async with state.proxy() as data:
                 data['phone'] = phone
+            
+            # Move to city collection
+            await message.answer(
+                "🏙 Zəhmət olmasa, şəhərinizi daxil edin (məsələn: Bakı):"
+            )
+            await CustomerRegistrationStates.entering_city.set()
+            
+        except Exception as e:
+            logger.error(f"Error in process_phone_input: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_role_selection(message)
+    
+    @dp.message_handler(state=CustomerRegistrationStates.entering_city)
+    async def process_city_input(message: types.Message, state: FSMContext):
+        """Process customer city input"""
+        try:
+            # Validate and store city
+            city = message.text.strip()
+            
+            if len(city) < 2 or len(city) > 50:
+                await message.answer(
+                    "❌ Şəhər adı ən azı 2, ən çoxu 50 simvol olmalıdır. Zəhmət olmasa, yenidən daxil edin:"
+                )
+                return
+            
+            async with state.proxy() as data:
+                data['city'] = city
                 
-                # Create summary for confirmation (without city)
+                # Create summary for confirmation
                 name = data['name']
+                phone = data['phone']
                 
                 confirmation_text = (
                     "📋 *Qeydiyyat məlumatları:*\n\n"
                     f"👤 *Ad:* {name}\n"
-                    f"📞 *Telefon:* {phone}\n\n"
+                    f"📞 *Telefon:* {phone}\n"
+                    f"🏙 *Şəhər:* {city}\n\n"
                     f"Bu məlumatları təsdiqləyirsiniz?"
                 )
             
@@ -391,7 +500,7 @@ def register_handlers(dp):
             await CustomerRegistrationStates.confirming_registration.set()
             
         except Exception as e:
-            logger.error(f"Error in process_phone_input: {e}")
+            logger.error(f"Error in process_city_input: {e}")
             await message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
@@ -409,13 +518,15 @@ def register_handlers(dp):
             data = await state.get_data()
             name = data['name']
             phone = data['phone']
+            city = data['city']
             
-            # Register customer in database (without city)
+            # Register customer in database
             telegram_id = callback_query.from_user.id
             customer_id = get_or_create_customer(
                 telegram_id=telegram_id,
                 name=name,
-                phone=phone
+                phone=phone,
+                city=city
             )
             
             if customer_id:
@@ -1376,6 +1487,7 @@ def register_handlers(dp):
                 "👤 *Profiliniz*\n\n"
                 f"👤 *Ad:* {customer.get('name', 'Təyin edilməyib')}\n"
                 f"📞 *Telefon:* {customer.get('phone', 'Təyin edilməyib')}\n"
+                f"🏙 *Şəhər:* {customer.get('city', 'Təyin edilməyib')}\n"
             )
             
             # Create profile management keyboard
@@ -1383,6 +1495,7 @@ def register_handlers(dp):
             keyboard.add(
                 InlineKeyboardButton("✏️ Adımı dəyiş", callback_data="edit_name"),
                 InlineKeyboardButton("📞 Telefon nömrəmi dəyiş", callback_data="edit_phone"),
+                InlineKeyboardButton("🏙 Şəhərimi dəyiş", callback_data="edit_city"),
                 InlineKeyboardButton("🔙 Geri", callback_data="back_to_menu")
             )
             
@@ -1536,7 +1649,61 @@ def register_handlers(dp):
             await state.finish()
             await show_customer_menu(message)
     
-
+    @dp.callback_query_handler(lambda c: c.data == "edit_city", state=ProfileManagementStates.viewing_profile)
+    async def edit_city(callback_query: types.CallbackQuery, state: FSMContext):
+        """Start editing customer city"""
+        try:
+            await callback_query.message.answer(
+                "🏙 Zəhmət olmasa, yeni şəhərinizi daxil edin:"
+            )
+            
+            await ProfileManagementStates.updating_city.set()
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in edit_city: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_customer_menu(callback_query.message)
+    
+    @dp.message_handler(state=ProfileManagementStates.updating_city)
+    async def process_updated_city(message: types.Message, state: FSMContext):
+        """Process updated customer city"""
+        try:
+            # Validate and store city
+            city = message.text.strip()
+            
+            if len(city) < 2 or len(city) > 50:
+                await message.answer(
+                    "❌ Şəhər adı ən azı 2, ən çoxu 50 simvol olmalıdır. Zəhmət olmasa, yenidən daxil edin:"
+                )
+                return
+            
+            # Update customer city in database
+            telegram_id = message.from_user.id
+            success = update_customer_profile(telegram_id, {'city': city})
+            
+            if success:
+                await message.answer(
+                    "✅ Şəhəriniz uğurla yeniləndi!"
+                )
+            else:
+                await message.answer(
+                    "❌ Şəhəriniz yenilənərkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin."
+                )
+            
+            # Show updated profile
+            await show_profile(message, state)
+            
+        except Exception as e:
+            logger.error(f"Error in process_updated_city: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_customer_menu(message)
     
     @dp.callback_query_handler(lambda c: c.data == "back_to_menu", state="*")
     async def back_to_menu_handler(callback_query: types.CallbackQuery, state: FSMContext):
@@ -2271,8 +2438,8 @@ def register_handlers(dp):
             if artisan and artisan.get('telegram_id'):
                 await bot.send_message(
                     chat_id=artisan['telegram_id'],
-                    text=f"✅ *Ödəniş təsdiqləndi*\n\n"
-                        f"Müştəri sifariş #{order_id} üçün ödənişi tamamladığını təsdiqlədi.\n\n"
+                    text=f"✅ *Nağd ödəniş təsdiqləndi*\n\n"
+                        f"Müştəri sifariş #{order_id} üçün nağd ödənişi tamamladığını təsdiqlədi.\n\n"
                         f"Sifarişiniz tamamlandı. Təşəkkür edirik!",
                     parse_mode="Markdown"
                 )
@@ -2581,8 +2748,8 @@ def register_handlers(dp):
                 
                 await bot.send_message(
                     chat_id=artisan['telegram_id'],
-                    text=f"💵 *Ödəniş bildirişi*\n\n"
-                        f"Müştəri sifariş #{order_id} üçün ödəniş etdiyini bildirdi.\n"
+                    text=f"💵 *Nağd ödəniş bildirişi*\n\n"
+                        f"Müştəri sifariş #{order_id} üçün nağd ödəniş etdiyini bildirdi.\n"
                         f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                         f"Zəhmət olmasa, ödənişi aldığınızı təsdiqləyin:",
                     reply_markup=keyboard,
@@ -2671,13 +2838,13 @@ def register_handlers(dp):
             # Create payment confirmation keyboard
             keyboard = InlineKeyboardMarkup()
             keyboard.add(InlineKeyboardButton(
-                "✅ Ödənişi etdim", 
+                "✅ Nağd ödənişi etdim", 
                 callback_data=f"cash_payment_made_{order_id}"
             ))
             
             # Send cash payment notification to customer
             await callback_query.message.answer(
-                f"💵 *Ödəniş*\n\n"
+                f"💵 *Nağd ödəniş*\n\n"
                 f"Sifariş: #{order_id}\n"
                 f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                 f"Zəhmət olmasa, ödənişi ustaya nağd şəkildə edin və "
@@ -2767,7 +2934,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER}\n"
+                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER} ({ADMIN_CARD_HOLDER})\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",
@@ -2982,7 +3149,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER}\n"
+                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER} ({ADMIN_CARD_HOLDER})\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",

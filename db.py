@@ -126,13 +126,14 @@ def get_customer_by_id(customer_id):
     return result
 
 
-def create_customer(telegram_id, name, phone=None):
+def create_customer(telegram_id, name, phone=None, city=None):
     """Create a new customer and return their ID
     
     Args:
         telegram_id (int): Telegram user ID
         name (str): Customer name
         phone (str, optional): Customer phone number
+        city (str, optional): Customer city
         
     Returns:
         int: ID of the created customer
@@ -152,15 +153,15 @@ def create_customer(telegram_id, name, phone=None):
         
     phone = encrypt_data(phone) if phone else None
     query = """
-        INSERT INTO customers (telegram_id, telegram_id_hash, name, phone, created_at)
-        VALUES (%s, %s, %s, %s, NOW())
+        INSERT INTO customers (telegram_id, telegram_id_hash, name, phone, city, created_at)
+        VALUES (%s, %s, %s, %s, %s, NOW())
     """
     conn = None
     cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(query, (encrypted_telegram_id, telegram_id_hash, name, phone))
+        cursor.execute(query, (encrypted_telegram_id, telegram_id_hash, name, phone, city))
         conn.commit()
         return cursor.lastrowid
     except Error as e:
@@ -175,13 +176,14 @@ def create_customer(telegram_id, name, phone=None):
             conn.close()
 
 
-def get_or_create_customer(telegram_id, name, phone=None):
+def get_or_create_customer(telegram_id, name, phone=None, city=None):
     """Get customer ID by Telegram ID or create if not exists
     
     Args:
         telegram_id (int): Telegram user ID
         name (str): Customer name
         phone (str, optional): Customer phone number
+        city (str, optional): Customer city
         
     Returns:
         int: Customer ID
@@ -189,7 +191,7 @@ def get_or_create_customer(telegram_id, name, phone=None):
     customer = get_customer_by_telegram_id(telegram_id)
     
     if not customer:
-        customer_id = create_customer(telegram_id, name, phone)
+        customer_id = create_customer(telegram_id, name, phone, city)
         return customer_id
     
     return customer['id']
@@ -200,7 +202,7 @@ def update_customer_profile(telegram_id, data):
     
     Args:
         telegram_id (int): Telegram user ID
-        data (dict): Data to update (keys: name, phone)
+        data (dict): Data to update (keys: name, phone, city)
         
     Returns:
         bool: True if successful, False otherwise
@@ -214,7 +216,7 @@ def update_customer_profile(telegram_id, data):
         logger.error(f"Customer not found for telegram_id: {telegram_id}")
         return False
         
-    valid_fields = ['name', 'phone']
+    valid_fields = ['name', 'phone', 'city']
     update_parts = []
     params = []
     
