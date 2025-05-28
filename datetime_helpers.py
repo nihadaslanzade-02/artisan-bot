@@ -63,7 +63,7 @@ def get_date_keyboard(days_ahead: int = 3) -> InlineKeyboardMarkup:
 
 def get_time_keyboard(
     start_hour: int = 8, 
-    end_hour: int = 24,
+    end_hour: int = 23,
     interval_mins: int = 10  
 ) -> InlineKeyboardMarkup:
     """
@@ -82,11 +82,11 @@ def get_time_keyboard(
     
     # Default değerleri config değerleriyle değiştir
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 8 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 24 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 23 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
-    if end_hour == 24:
-        end_hour = 24
+    if end_hour == 23:
+        end_hour = 23
         include_midnight = True
     else:
         include_midnight = False
@@ -144,7 +144,7 @@ def get_available_time_slots(
     date_str: str, 
     booked_slots: List[str],
     start_hour: int = 8,
-    end_hour: int = 24, 
+    end_hour: int = 23, 
     interval_mins: int = 10  
 ) -> List[str]:
     """
@@ -165,11 +165,11 @@ def get_available_time_slots(
     
     # Default değerleri config değerleriyle değiştir
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 8 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 24 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 23 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
-    if end_hour == 24:
-        end_hour = 24
+    if end_hour == 23:
+        end_hour = 23
         include_midnight = True
     else:
         include_midnight = False
@@ -199,7 +199,7 @@ def get_time_slots_keyboard(
     date_str: str, 
     booked_slots: List[str] = None,
     start_hour: int = 8,
-    end_hour: int = 24, 
+    end_hour: int = 23, 
     interval_mins: int = 10
 ) -> InlineKeyboardMarkup:
     """Create a keyboard with available time slots for a specific date."""
@@ -213,11 +213,11 @@ def get_time_slots_keyboard(
     
     # Set default values with config values
     start_hour = TIME_SLOTS_START_HOUR if start_hour == 8 else start_hour
-    end_hour = TIME_SLOTS_END_HOUR if end_hour == 24 else end_hour
+    end_hour = TIME_SLOTS_END_HOUR if end_hour == 23 else end_hour
     
     # 24 saati işlemək üçün düzəltmə
-    if end_hour == 24:
-        end_hour = 24
+    if end_hour == 23:
+        end_hour = 23
         include_midnight = True
     else:
         include_midnight = False

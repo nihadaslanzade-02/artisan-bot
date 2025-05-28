@@ -62,8 +62,8 @@ DEFAULT_SEARCH_RADIUS = 10  # km - Default radius for searching nearby artisans
 MAX_SEARCH_RADIUS = 30  # km - Maximum allowed search radius
 
 # Time Settings
-TIME_SLOTS_START_HOUR = 1  
-TIME_SLOTS_END_HOUR = 24
+TIME_SLOTS_START_HOUR = 8  
+TIME_SLOTS_END_HOUR = 23
 TIME_SLOT_INTERVAL = 10  # minutes - Interval between time slots
 
 # User Experience Settings

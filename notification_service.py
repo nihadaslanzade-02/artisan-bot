@@ -604,8 +604,8 @@ async def notify_artisan_about_invalid_commission(order_id):
 async def block_artisan_after_timeout(order_id, artisan_id, required_payment):
     """Block artisan after timeout if payment not made"""
     try:
-        # Wait 24 hours
-        await asyncio.sleep(18 * 60 * 60)  # 24 hours
+        # Wait 18 hours
+        await asyncio.sleep(18 * 60 * 60)  # 18 hours
         
         # Check if artisan has resubmitted a receipt
         conn = get_connection()

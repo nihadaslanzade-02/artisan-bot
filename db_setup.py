@@ -493,7 +493,7 @@ def setup_database():
                 ('Divar kağızı (oboy) vurulması', 'Divar kağızlarının vurulması və hazırlıq işləri'),
                 ('Rəngsaz işləri', 'Divar, tavan və fasadların rənglənməsi'),
                 ('Alçıpan montajı', 'Alçıpan konstruksiyalarının quraşdırılması'),
-                ('Döşəmə və laminat(parket) quraşdırılması', 'Döşəmə və laminatların (parketlərin) quraşdırılması')
+                ('Döşəmə və laminat', 'Döşəmə və laminatların (parketlərin) quraşdırılması')
             ]
             
             for name, desc in berpa_subservices:
