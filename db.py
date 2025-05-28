@@ -160,7 +160,7 @@ def create_customer(telegram_id, name, phone=None):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(query, (encrypted_telegram_id, telegram_id_hash, name, phone, city))
+        cursor.execute(query, (encrypted_telegram_id, telegram_id_hash, name, phone))
         conn.commit()
         return cursor.lastrowid
     except Error as e:
@@ -200,7 +200,7 @@ def update_customer_profile(telegram_id, data):
     
     Args:
         telegram_id (int): Telegram user ID
-        data (dict): Data to update (keys: name, phone, city)
+        data (dict): Data to update (keys: name, phone)
         
     Returns:
         bool: True if successful, False otherwise
@@ -214,7 +214,7 @@ def update_customer_profile(telegram_id, data):
         logger.error(f"Customer not found for telegram_id: {telegram_id}")
         return False
         
-    valid_fields = ['name', 'phone', 'city']
+    valid_fields = ['name', 'phone']
     update_parts = []
     params = []
     
