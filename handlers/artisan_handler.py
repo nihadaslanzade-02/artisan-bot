@@ -183,10 +183,8 @@ def register_handlers(dp):
                 "*6. Dəyişikliklər və Əlavələr*\n"
                 "6.1. Bu müqaviləyə ediləcək istənilən dəyişiklik və ya əlavə, yalnız tətbiqin rəhbərliyi tərəfindən yazılı formada təqdim edilməklə və usta tərəfindən təsdiqləndikdən sonra qüvvəyə minmiş sayılır.\n"
                 "6.2. Dəyişikliklər tətbiqdə ayrıca bildiriş vasitəsilə ustalara təqdim olunur və usta tərəfindən qəbul edildiyi halda hüquqi qüvvəyə malik olur.\n\n"
-
                 "Qəbul etməklə, yuxarıdakı bütün şərtlərlə razı olduğunuzu və onları yerinə yetirməyi öhdənizə götürdüyünüzü təsdiq etmiş olursunuz.\n\n"
-
-                "✅ “Qəbul edirəm” - düyməsini klikləməklə razılaşmanı təsdiqləyin."
+                "✅ *Qəbul edirəm* - düyməsini klikləməklə razılaşmanı təsdiqləyin."
                 )
             
             # Create agreement buttons
@@ -2972,19 +2970,19 @@ def register_handlers(dp):
                 if conn:
                     conn.close()
             
-            # For initial registration without payment info, redirect to payment setup
-            if is_initial_registration and not has_payment_info:
-                # Ask for payment information
-                await callback_query.message.answer(
-                    "💳 *Ödəniş məlumatlarının tənzimlənməsi*\n\n"
-                    "Müştərilərdən kartla ödəniş qəbul etmək üçün kart məlumatlarınızı təqdim edin.\n\n"
-                    "Zəhmət olmasa, kart nömrənizi daxil edin (məsələn: 4169 7388 5555 6666):",
-                    parse_mode="Markdown"
-                )
-                
-                await ArtisanProfileStates.entering_card_number.set()
-                await callback_query.answer()
-                return
+            # COMMENTED OUT: For initial registration without payment info, redirect to payment setup
+            # if is_initial_registration and not has_payment_info:
+            #     # Ask for payment information
+            #     await callback_query.message.answer(
+            #         "💳 *Ödəniş məlumatlarının tənzimlənməsi*\n\n"
+            #         "Müştərilərdən kartla ödəniş qəbul etmək üçün kart məlumatlarınızı təqdim edin.\n\n"
+            #         "Zəhmət olmasa, kart nömrənizi daxil edin (məsələn: 4169 7388 5555 6666):",
+            #         parse_mode="Markdown"
+            #     )
+            #     
+            #     await ArtisanProfileStates.entering_card_number.set()
+            #     await callback_query.answer()
+            #     return
                 
             # Show main menu for non-initial registration or if card info exists
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True)

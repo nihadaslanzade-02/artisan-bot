@@ -417,7 +417,7 @@ async def process_customer_card_details(customer_id, card_number, refund_id):
         from crypto_service import mask_card_number
         
         # Müştəri məlumatlarını maskalanmış şəkildə al
-        masked_customer = get_masked_customer_by_id(customer_id)
+        masked_customer = wrap_get_dict_function(get_customer_by_id, mask=False)(customer_id)
         
         # Ad, telefon məlumatları maskalanmış olacaq, məs: "J*** D***"
         customer_name = masked_customer.get('name', 'Unknown')
@@ -516,12 +516,12 @@ async def complete_refund_process(refund_id, admin_id):
         
         # For admin notifications - get masked customer data
         from db_encryption_wrapper import wrap_get_dict_function
-        masked_customer = wrap_get_dict_function(get_customer_by_id, mask=True)(customer_id)
+        masked_customer = wrap_get_dict_function(get_customer_by_id, mask=False)(customer_id)
         masked_customer_name = masked_customer.get('name', 'Müştəri')
         
         # Get card details in masked form for admin confirmation
         from payment_service import get_card_details
-        masked_card = get_card_details(order_id, mask=True)
+        masked_card = get_card_details(order_id, mask=False)
         card_display = "Kart məlumatı yoxdur"
         if masked_card:
             card_display = masked_card.get('card_number', 'Kart məlumatı yoxdur')

@@ -54,6 +54,9 @@ class AdminRefundState(StatesGroup):
         waiting_for_amount = State()
         waiting_for_reason = State()
 
+class AdminDeleteUserState(StatesGroup):
+    waiting_for_user_id = State()
+
 
 def is_admin(user_id):
     """Check if user is admin"""
@@ -218,7 +221,8 @@ async def admin_panel(message: types.Message):
         InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
-        InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")
+        InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+        InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user")
     )
     
     await message.answer(
@@ -249,7 +253,8 @@ async def admin_command(message: types.Message):
         InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
-        InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")
+        InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+        InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user")
     )
     
     await message.answer(
@@ -278,6 +283,8 @@ async def admin_menu_handlers(callback_query: types.CallbackQuery):
             await show_admin_users(callback_query.message)
         elif menu_option == "admin_stats":
             await show_admin_stats(callback_query.message)
+        elif menu_option == "admin_delete_user":
+            await show_admin_delete_user(callback_query.message)
         else:
             await callback_query.answer("Bu funksiya hələ hazır deyil.")
         
@@ -326,12 +333,8 @@ async def show_admin_receipts(message):
             order_id = receipt['id']
             
             # Şifreleri çözülmüş müşteri ve usta bilgilerini al
-            customer_encrypted = get_customer_by_id(receipt['customer_id'])
-            artisan_encrypted = get_artisan_by_id(receipt['artisan_id'])
-            
-            # Şifreleri çöz ve maskele
-            customer = decrypt_dict_data(customer_encrypted, mask=True)
-            artisan = get_masked_artisan_by_id(receipt['artisan_id'])
+            customer = get_admin_customer_by_id(receipt['customer_id'])
+            artisan = get_admin_artisan_by_id(receipt['artisan_id'])
             
             # Get verification status
             status_text = ""
@@ -508,8 +511,8 @@ async def show_admin_orders(message):
             artisan_encrypted = get_artisan_by_id(order['artisan_id'])
             
             # Şifreleri çöz ve maskele
-            customer = decrypt_dict_data(customer_encrypted, mask=True)
-            artisan = get_masked_artisan_by_id(order['artisan_id'])
+            customer = decrypt_dict_data(customer_encrypted, mask=False)
+            artisan = decrypt_dict_data(artisan_encrypted, mask=False)
             
             # Format date
             created_at = order['created_at']
@@ -539,7 +542,8 @@ async def show_admin_orders(message):
                 f"👷‍♂️ Usta: {artisan['name']}\n"
                 f"🛠 Xidmət: {order['service']}\n"
                 f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
-                f"🔄 Status: {status_text}"
+                f"🔄 Status: {status_text}\n"
+                f"📝 Qeyd: {order.get('note', '')}"
             )
             
             # Create action buttons for order
@@ -668,6 +672,212 @@ async def show_admin_stats(message):
         logger.error(f"Error in show_admin_stats: {e}")
         await message.answer("❌ Statistikalar yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
+async def show_admin_delete_user(message):
+    """Show user deletion options for admin"""
+    try:
+        # Create user type selection buttons
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("👷‍♂️ Usta", callback_data="delete_user_artisan"),
+            InlineKeyboardButton("👤 Müştəri", callback_data="delete_user_customer")
+        )
+        keyboard.add(
+            InlineKeyboardButton("🔙 Admin Menyusuna Qayıt", callback_data="back_to_admin")
+        )
+        
+        await message.answer(
+            "🗑️ *İstifadəçi Silmə*\n\n"
+            "⚠️ **XƏBƏRDARLIQ:** Bu əməliyyat geri qaytarılmaz!\n"
+            "İstifadəçi silinəndə bütün məlumatları və sifarişləri də silinəcək.\n\n"
+            "Silmək istədiyiniz istifadəçi tipini seçin:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in show_admin_delete_user: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+@dp.callback_query_handler(lambda c: c.data.startswith('delete_user_'))
+async def handle_delete_user_type(callback_query: types.CallbackQuery, state: FSMContext):
+    """Handle user type selection for deletion"""
+    try:
+        if not is_admin(callback_query.from_user.id):
+            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
+            return
+        
+        user_type = callback_query.data.split('_')[-1]  # artisan or customer
+        
+        # Save user type in state
+        await state.update_data(delete_user_type=user_type)
+        
+        # Set state to wait for user ID
+        await AdminDeleteUserState.waiting_for_user_id.set()
+        
+        # Create cancel button
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("❌ Ləğv et", callback_data="cancel_delete_user"))
+        
+        if user_type == "artisan":
+            await callback_query.message.answer(
+                "👷‍♂️ *Usta Silmə*\n\n"
+                "Silinəcək ustanın **ID**-sini daxil edin.\n"
+                "⚠️ Bu, `artisan_id` deyil, verilənlər bazasındakı `id` sütunudur.\n\n"
+                "ID-ni əldə etmək üçün 'İstifadəçiləri İdarə Et' → 'Ustalar' bölməsindən istifadə edin.",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        else:  # customer
+            await callback_query.message.answer(
+                "👤 *Müştəri Silmə*\n\n"
+                "Silinəcək müştərinin **ID**-sini daxil edin.\n"
+                "⚠️ Bu, verilənlər bazasındakı `id` sütunudur.\n\n"
+                "ID-ni əldə etmək üçün 'İstifadəçiləri İdarə Et' → 'Müştərilər' bölməsindən istifadə edin.",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        
+        await callback_query.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in handle_delete_user_type: {e}")
+        await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+        await state.finish()
+        await callback_query.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "cancel_delete_user", state="*")
+async def cancel_delete_user(callback_query: types.CallbackQuery, state: FSMContext):
+    """Cancel user deletion process"""
+    try:
+        await state.finish()
+        await callback_query.message.answer("❌ İstifadəçi silmə əməliyyatı ləğv edildi.")
+        
+        # Return to admin menu
+        await back_to_admin_menu(callback_query)
+        
+    except Exception as e:
+        logger.error(f"Error in cancel_delete_user: {e}")
+        await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+        await callback_query.answer()
+
+@dp.message_handler(state=AdminDeleteUserState.waiting_for_user_id)
+async def process_delete_user_id(message: types.Message, state: FSMContext):
+    """Process user ID for deletion"""
+    try:
+        # Get user type from state
+        data = await state.get_data()
+        user_type = data.get('delete_user_type')
+        
+        # Validate input
+        try:
+            user_id = int(message.text.strip())
+        except ValueError:
+            await message.answer("❌ Yalnız rəqəm daxil edin. Zəhmət olmasa, düzgün ID daxil edin:")
+            return
+        
+        # Import database functions
+        from db import execute_query, get_customer_by_id, get_artisan_by_id
+        from db_encryption_wrapper import decrypt_dict_data
+        
+        # Verify user exists and get info
+        if user_type == "artisan":
+            user_data = get_artisan_by_id(user_id)
+            if not user_data:
+                await message.answer(f"❌ ID {user_id} ilə usta tapılmadı. Zəhmət olmasa, düzgün ID daxil edin:")
+                return
+            
+            # Decrypt name for confirmation
+            decrypted_user = decrypt_dict_data(user_data, mask=False)
+            user_name = decrypted_user.get('name', 'Naməlum')
+            user_title = "Usta"
+            
+        else:  # customer
+            user_data = get_customer_by_id(user_id)
+            if not user_data:
+                await message.answer(f"❌ ID {user_id} ilə müştəri tapılmadı. Zəhmət olmasa, düzgün ID daxil edin:")
+                return
+            
+            # Decrypt name for confirmation
+            decrypted_user = decrypt_dict_data(user_data, mask=False)
+            user_name = decrypted_user.get('name', 'Naməlum')
+            user_title = "Müştəri"
+        
+        # Create confirmation buttons
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(
+            InlineKeyboardButton("✅ Bəli, Sil", callback_data=f"confirm_delete_{user_type}_{user_id}"),
+            InlineKeyboardButton("❌ Xeyr, Ləğv et", callback_data="cancel_delete_user")
+        )
+        
+        await message.answer(
+            f"⚠️ **XƏBƏRDARLIQ: Geri qaytarılmaz əməliyyat!**\n\n"
+            f"🗑️ Silinəcək istifadəçi:\n"
+            f"**{user_title}:** {user_name}\n"
+            f"**ID:** {user_id}\n\n"
+            f"Bu istifadəçini və onunla əlaqəli bütün məlumatları (sifarişlər, ödənişlər, bloklar və s.) **tamamilə** silmək istədiyinizə əminsiniz?\n\n"
+            f"⚠️ **Bu əməliyyat geri qaytarıla bilməz!**",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await state.finish()
+        
+    except Exception as e:
+        logger.error(f"Error in process_delete_user_id: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+        await state.finish()
+
+@dp.callback_query_handler(lambda c: c.data.startswith('confirm_delete_'))
+async def confirm_delete_user(callback_query: types.CallbackQuery):
+    """Confirm and execute user deletion"""
+    try:
+        if not is_admin(callback_query.from_user.id):
+            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
+            return
+        
+        # Parse callback data
+        parts = callback_query.data.split('_')
+        user_type = parts[2]  # artisan or customer
+        user_id = int(parts[3])
+        
+        # Import deletion function
+        from db import delete_user_completely
+        
+        # Perform deletion
+        success = delete_user_completely(user_type, user_id)
+        
+        if success:
+            user_title = "Usta" if user_type == "artisan" else "Müştəri"
+            
+            await callback_query.message.answer(
+                f"✅ **Silmə tamamlandı!**\n\n"
+                f"🗑️ **{user_title}** (ID: {user_id}) və onunla əlaqəli bütün məlumatlar verilənlər bazasından tamamilə silindi.\n\n"
+                f"Silinən məlumatlar:\n"
+                f"• İstifadəçi profili\n"
+                f"• Bütün sifarişlər\n"
+                f"• Ödəniş qeydləri\n"
+                f"• Blok tarixçəsi\n"
+                f"• Rəylər və reytinqlər\n"
+                f"• Digər əlaqəli məlumatlar",
+                parse_mode="Markdown"
+            )
+            
+            # Log the deletion
+            logger.info(f"Admin {callback_query.from_user.id} deleted {user_type} with ID {user_id}")
+            
+        else:
+            await callback_query.message.answer(
+                "❌ İstifadəçi silinərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+        
+        # Return to admin menu
+        await back_to_admin_menu(callback_query)
+        
+    except Exception as e:
+        logger.error(f"Error in confirm_delete_user: {e}")
+        await callback_query.message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+        await callback_query.answer()
+
 @dp.callback_query_handler(lambda c: c.data.startswith(('order_', 'filter_orders_')))
 async def order_actions_handler(callback_query: types.CallbackQuery):
     """Handle order-related actions"""
@@ -786,8 +996,8 @@ async def filter_orders(message, filter_type):
             artisan_encrypted = get_artisan_by_id(order['artisan_id'])
             
             # Şifreleri çöz ve maskele
-            customer = decrypt_dict_data(customer_encrypted, mask=True)
-            artisan = get_masked_artisan_by_id(order['artisan_id'])
+            customer = decrypt_dict_data(customer_encrypted, mask=False)
+            artisan = decrypt_dict_data(artisan_encrypted, mask=False)
             
             # Format date
             created_at = order['created_at']
@@ -817,7 +1027,8 @@ async def filter_orders(message, filter_type):
                 f"👷‍♂️ Usta: {artisan['name']}\n"
                 f"🛠 Xidmət: {order['service']}\n"
                 f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
-                f"🔄 Status: {status_text}"
+                f"🔄 Status: {status_text}\n"
+                f"📝 Qeyd: {order.get('note', '')}"
             )
             
             # Create action buttons for order
@@ -856,11 +1067,11 @@ async def show_order_details(message, order_id):
         artisan_encrypted = get_artisan_by_id(order_encrypted.get('artisan_id'))
         
         # Şifreleri çöz ve maskele
-        customer = decrypt_dict_data(customer_encrypted, mask=True)
-        artisan = get_masked_artisan_by_id(order_encrypted.get('artisan_id'))
+        customer = decrypt_dict_data(customer_encrypted, mask=False)
+        artisan = decrypt_dict_data(artisan_encrypted, mask=False)
         
         # Sipariş verisinin şifresini çöz ve maskele
-        order = decrypt_dict_data(order_encrypted, mask=True)
+        order = decrypt_dict_data(order_encrypted, mask=False)
         
         # Format date
         date_time = order.get('date_time')
@@ -1169,7 +1380,7 @@ async def show_customers_list(message):
             from db_encryption_wrapper import wrap_get_dict_function
             from db import get_customer_by_id
             
-            masked_customer = wrap_get_dict_function(get_customer_by_id, mask=True)(customer['id'])
+            masked_customer = wrap_get_dict_function(get_customer_by_id, mask=False)(customer['id'])
             
             # Format date
             created_at = customer['created_at']
@@ -1265,7 +1476,7 @@ async def show_artisans_list(message):
             from db_encryption_wrapper import wrap_get_dict_function
             from db import get_artisan_by_id
             
-            masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=True)(artisan['id'])
+            masked_artisan = wrap_get_dict_function(get_artisan_by_id, mask=False)(artisan['id'])
             
             # Format date
             created_at = artisan['created_at']
@@ -1999,7 +2210,7 @@ async def show_customer_orders(message, customer_id):
             return
         
         # Şifreleri çöz ve maskele
-        customer = decrypt_dict_data(customer_encrypted, mask=True)
+        customer = decrypt_dict_data(customer_encrypted, mask=False)
         
         # Get customer orders
         orders_encrypted = get_customer_orders(customer_id)
@@ -2088,7 +2299,7 @@ async def show_artisan_orders(message, artisan_id):
             return
         
         # Şifreleri çöz ve maskele
-        artisan = get_masked_artisan_by_id(order['artisan_id'])
+        artisan = decrypt_dict_data(artisan_encrypted, mask=False)
         
         # Get artisan orders
         query = """
@@ -2179,7 +2390,8 @@ async def back_to_admin_menu(callback_query: types.CallbackQuery):
             InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
             InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
             InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
-            InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")
+            InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+            InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user")
         )
         
         await callback_query.message.answer(
@@ -2601,6 +2813,12 @@ def register_all_handlers():
     dp.register_message_handler(process_block_reason, state=AdminBlockState.waiting_for_reason)
     dp.register_message_handler(process_block_payment, state=AdminBlockState.waiting_for_payment)
     dp.register_message_handler(process_admin_message, state=AdminContactState.waiting_for_message)
+    
+    # Delete user handlers
+    dp.register_callback_query_handler(handle_delete_user_type, lambda c: c.data.startswith('delete_user_'), state="*")
+    dp.register_callback_query_handler(cancel_delete_user, lambda c: c.data == "cancel_delete_user", state="*")
+    dp.register_message_handler(process_delete_user_id, state=AdminDeleteUserState.waiting_for_user_id)
+    dp.register_callback_query_handler(confirm_delete_user, lambda c: c.data.startswith('confirm_delete_'))
     
     dp.register_callback_query_handler(initiate_refund_request, lambda c: c.data.startswith('request_refund_'), state="*")
     dp.register_message_handler(process_refund_amount, state=AdminRefundState.waiting_for_amount)

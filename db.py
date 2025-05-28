@@ -2621,6 +2621,19 @@ def get_masked_order_details(order_id):
     """Sipariş detaylarını maskelenmiş olarak al"""
     return wrap_get_dict_function(get_order_details, decrypt=True, mask=True)(order_id)
 
+# Admin paneli için maskelemeden bilgileri alan fonksiyonlar
+def get_admin_customer_by_id(customer_id):
+    """Admin için müşteri bilgilerini maskelemeden al"""
+    return wrap_get_dict_function(get_customer_by_id, decrypt=True, mask=False)(customer_id)
+
+def get_admin_artisan_by_id(artisan_id):
+    """Admin için usta bilgilerini maskelemeden al"""
+    return wrap_get_dict_function(get_artisan_by_id, decrypt=True, mask=False)(artisan_id)
+
+def get_admin_order_details(order_id):
+    """Admin için sipariş detaylarını maskelemeden al"""
+    return wrap_get_dict_function(get_order_details, decrypt=True, mask=False)(order_id)
+
 get_artisan_by_service = wrap_get_list_function(get_artisan_by_service, decrypt=True, mask=False)
 get_nearby_artisans = wrap_get_list_function(get_nearby_artisans, decrypt=True, mask=False)
 get_artisan_reviews = wrap_get_list_function(get_artisan_reviews, decrypt=True, mask=False)
@@ -2633,6 +2646,15 @@ def get_masked_customer_orders(customer_id):
 def get_masked_artisan_active_orders(artisan_id):
     """Usta aktif siparişlerini maskelenmiş olarak al"""
     return wrap_get_list_function(get_artisan_active_orders, decrypt=True, mask=True)(artisan_id)
+
+# Admin paneli için maskelemeden listeler alan fonksiyonlar
+def get_admin_customer_orders(customer_id):
+    """Admin için müşteri siparişlerini maskelemeden al"""
+    return wrap_get_list_function(get_customer_orders, decrypt=True, mask=False)(customer_id)
+
+def get_admin_artisan_active_orders(artisan_id):
+    """Admin için usta aktif siparişlerini maskelemeden al"""
+    return wrap_get_list_function(get_artisan_active_orders, decrypt=True, mask=False)(artisan_id)
 
 # -------------------------
 # DELAY REMINDER FUNCTIONS  
@@ -2809,5 +2831,124 @@ def mark_delay_reminder_failed(task_id):
         logger.error(f"Error marking delay reminder failed: {e}")
         return False
     finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def delete_user_completely(user_type, user_id):
+    """
+    Completely delete a user and all related data from the database
+    
+    Args:
+        user_type (str): 'artisan' or 'customer'
+        user_id (int): ID of the user to delete
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Start transaction
+        conn.autocommit = False
+        
+        # Get telegram_id before deletion for user_context cleanup
+        telegram_id_encrypted = None
+        if user_type == "artisan":
+            cursor.execute("SELECT telegram_id FROM artisans WHERE id = %s", (user_id,))
+        else:
+            cursor.execute("SELECT telegram_id FROM customers WHERE id = %s", (user_id,))
+            
+        result = cursor.fetchone()
+        if result:
+            telegram_id_encrypted = result[0]
+        
+        # Initialize order_ids list
+        order_ids = []
+        
+        if user_type == "artisan":
+            # Get orders associated with this artisan
+            cursor.execute("SELECT id FROM orders WHERE artisan_id = %s", (user_id,))
+            order_ids = [row[0] for row in cursor.fetchall()]
+            
+            # Delete from artisan-specific tables first
+            cursor.execute("DELETE FROM artisan_services WHERE artisan_id = %s", (user_id,))
+            cursor.execute("DELETE FROM artisan_price_ranges WHERE artisan_id = %s", (user_id,))
+            cursor.execute("DELETE FROM artisan_blocks WHERE artisan_id = %s", (user_id,))
+            cursor.execute("DELETE FROM fine_receipts WHERE artisan_id = %s", (user_id,))
+            
+            # Delete reviews where this artisan is the provider
+            cursor.execute("DELETE FROM reviews WHERE artisan_id = %s", (user_id,))
+            
+            # Delete order-related data for orders with this artisan
+            for order_id in order_ids:
+                cursor.execute("DELETE FROM order_payments WHERE order_id = %s", (order_id,))
+                cursor.execute("DELETE FROM order_subservices WHERE order_id = %s", (order_id,))
+                cursor.execute("DELETE FROM receipt_verification_history WHERE order_id = %s", (order_id,))
+                cursor.execute("DELETE FROM reviews WHERE order_id = %s", (order_id,))
+                
+            # Delete orders
+            cursor.execute("DELETE FROM orders WHERE artisan_id = %s", (user_id,))
+            
+            # Finally delete the artisan
+            cursor.execute("DELETE FROM artisans WHERE id = %s", (user_id,))
+            
+        elif user_type == "customer":
+            # Get orders associated with this customer
+            cursor.execute("SELECT id FROM orders WHERE customer_id = %s", (user_id,))
+            order_ids = [row[0] for row in cursor.fetchall()]
+            
+            # Delete from customer-specific tables first
+            cursor.execute("DELETE FROM customer_blocks WHERE customer_id = %s", (user_id,))
+            
+            # Delete reviews where this customer is the reviewer
+            cursor.execute("DELETE FROM reviews WHERE customer_id = %s", (user_id,))
+            
+            # Delete order-related data for orders with this customer
+            for order_id in order_ids:
+                cursor.execute("DELETE FROM order_payments WHERE order_id = %s", (order_id,))
+                cursor.execute("DELETE FROM order_subservices WHERE order_id = %s", (order_id,))
+                cursor.execute("DELETE FROM receipt_verification_history WHERE order_id = %s", (order_id,))
+                cursor.execute("DELETE FROM reviews WHERE order_id = %s", (order_id,))
+                
+            # Delete orders
+            cursor.execute("DELETE FROM orders WHERE customer_id = %s", (user_id,))
+            
+            # Finally delete the customer
+            cursor.execute("DELETE FROM customers WHERE id = %s", (user_id,))
+            
+        else:
+            logger.error(f"Invalid user_type: {user_type}")
+            return False
+        
+        # Delete from user_context table using telegram_id we got earlier
+        if telegram_id_encrypted:
+            cursor.execute("DELETE FROM user_context WHERE telegram_id = %s", (telegram_id_encrypted,))
+        
+        # Delete any scheduled tasks related to this user's orders
+        for order_id in order_ids:
+            cursor.execute("DELETE FROM scheduled_tasks WHERE reference_id = %s", (order_id,))
+        
+        # Delete any notification logs related to this user
+        cursor.execute("DELETE FROM notification_log WHERE target_id = %s", (user_id,))
+        
+        # Commit transaction
+        conn.commit()
+        
+        logger.info(f"Successfully deleted {user_type} with ID {user_id} and all related data")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error deleting {user_type} with ID {user_id}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+        
+    finally:
+        if cursor:
+            cursor.close()
         if conn and conn.is_connected():
             conn.close()
