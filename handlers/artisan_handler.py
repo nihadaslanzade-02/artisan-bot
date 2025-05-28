@@ -166,21 +166,21 @@ def register_handlers(dp):
             agreement_text = (
                 "📜 Usta Müqaviləsi\n\n"
                 "Qeyd: Bu razılaşmanı qəbul etməklə, aşağıda göstərilən şərtləri və öhdəlikləri qəbul etmiş və təsdiqləmiş olursunuz:\n\n"
-                "1. Sifarişin Qəbulu və Xidmət Öhdəliyi\n"
+                "*1. Sifarişin Qəbulu və Xidmət Öhdəliyi*\n"
                 "1.1. Usta, sifarişi qəbul etdikdən sonra göstərilən ünvana vaxtında çatmağı (yalnız əsaslı və sübut edilə bilən hallar istisna olmaqla) və xidməti keyfiyyətlə yerinə yetirməyi öhdəsinə götürür.\n\n"
-                "2. Qiymətin Təyini və Müştəri ilə Razılaşma\n"
+                "*2. Qiymətin Təyini və Müştəri ilə Razılaşma*\n"
                 "2.1. Usta sifarişi qəbul etdikdən sonra xidmətin dəyərini təyin edir.\n"
                 "2.2. Müştəri təklif olunan qiyməti qəbul etdikdən sonra razılaşma qüvvəyə minmiş sayılır və tərəflər üzərinə öhdəlik götürürlər.\n\n"
-                "3. Ödəniş\n"
+                "*3. Ödəniş*\n"
                 "3.1. Müştəri ödənişi nağd və ya bank kartı vasitəsilə edə bilər.\n"
                 "3.2. Ödəniş kart vasitəsilə edildikdə məbləğ 24 saat ərzində ustanın kart hesabına köçürülür.\n\n"
-                "4. Tətbiqdən Məhdudlaşdırılma və Kənarlaşdırılma Halları\n"
+                "*4. Tətbiqdən Məhdudlaşdırılma və Kənarlaşdırılma Halları*\n"
                 "4.1. Aşağıdakı hallar aşkarlandıqda usta tətbiqdən müvəqqəti və ya daimi olaraq uzaqlaşdırıla bilər:\n"
                 "4.1.1. Müştərilər tərəfindən davamlı şikayətlərin daxil olması və xidmət keyfiyyətinin aşağı olması;\n"
                 "4.1.2. Müştərilərə qarşı etik olmayan davranışların müşahidə olunması.\n\n"
-                "5. Məsuliyyətlər\n"
+                "*5. Məsuliyyətlər*\n"
                 "5.1. Bu müqavilənin hər hansı bəndinə əməl olunmadığı halda ilkin xəbərdarlıq edilir. Təkrar pozuntu halında ustanın tətbiqə çıxışı məhdudlaşdırıla və əməkdaşlıq sonlandırıla bilər.\n\n"
-                "6. Dəyişikliklər və Əlavələr\n"
+                "*6. Dəyişikliklər və Əlavələr*\n"
                 "6.1. Bu müqaviləyə ediləcək istənilən dəyişiklik və ya əlavə, yalnız tətbiqin rəhbərliyi tərəfindən yazılı formada təqdim edilməklə və usta tərəfindən təsdiqləndikdən sonra qüvvəyə minmiş sayılır.\n"
                 "6.2. Dəyişikliklər tətbiqdə ayrıca bildiriş vasitəsilə ustalara təqdim olunur və usta tərəfindən qəbul edildiyi halda hüquqi qüvvəyə malik olur.\n\n"
 
@@ -1193,8 +1193,8 @@ def register_handlers(dp):
                 # Show payment options to artisan
                 keyboard = InlineKeyboardMarkup(row_width=1)
                 keyboard.add(
-                    InlineKeyboardButton("💳 Kartla ödəniş", callback_data=f"payment_card_{order_id}"),
-                    InlineKeyboardButton("💵 Nağd ödəniş", callback_data=f"payment_cash_{order_id}")
+                    # InlineKeyboardButton("💳 Kartla ödəniş", callback_data=f"payment_card_{order_id}"),
+                    InlineKeyboardButton("💵 Ödəniş", callback_data=f"payment_cash_{order_id}")
                 )
                 
                 await message.answer(
@@ -1325,7 +1325,7 @@ def register_handlers(dp):
                 
                 # Inform artisan about the process
                 await callback_query.message.answer(
-                    f"💵 *Nağd ödəniş seçildi*\n\n"
+                    f"💵 *Ödəniş edilir...*\n\n"
                     f"Sifariş: #{order_id}\n"
                     f"Ümumi məbləğ: {order['price']} AZN\n\n"
                     f"Müştəridən ödənişi aldıqdan sonra sifarişin tamamlandığını təsdiqləyin.",
@@ -1591,7 +1591,7 @@ def register_handlers(dp):
             )
             await callback_query.answer()
             await state.finish()
-    
+
     # Handler for aborting order cancellation
     @dp.callback_query_handler(
         lambda c: c.data.startswith('abort_cancel_'),
@@ -2683,7 +2683,7 @@ def register_handlers(dp):
             
             if not subservices:
                 await callback_query.message.answer(
-                    f"❌ '{service}' xidməti üçün alt xidmətlər tapılmadı. "
+                    f"❌ '{service}' xidməti üçün alt xidmətlər tapılmadı."
                     f"Zəhmət olmasa, administratorla əlaqə saxlayın."
                 )
                 await callback_query.answer()
@@ -3603,7 +3603,7 @@ def register_handlers(dp):
                 f"*Səbəb:* {reason}\n\n"
                 f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
                 f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863 (Nihad Aslanzade)\n"
+                f"1. Bu karta ödəniş edin: 4098 5844 9700 2863\n"
                 f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
                 f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
                 f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",

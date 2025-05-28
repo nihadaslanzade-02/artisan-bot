@@ -131,11 +131,10 @@ async def notify_customer_about_payment_options(order_id):
         # NOTE: Fiyat zaten artisan handler'da set edildi, burada tekrar set etmiyoruz
         # Bu sayede fiyat aralığı kontrolümüz bypass edilmiyor
         
-        # Create payment method keyboard
-        keyboard = InlineKeyboardMarkup(row_width=2)
+        # Create payment method keyboard - Remove card payment option
+        keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(
-            InlineKeyboardButton("💳 Kartla ödəniş", callback_data=f"pay_card_{order_id}"),
-            InlineKeyboardButton("💵 Nağd ödəniş", callback_data=f"pay_cash_{order_id}")
+            InlineKeyboardButton("💵 Ödəniş", callback_data=f"pay_cash_{order_id}")
         )
         
         # Send payment options to customer
@@ -148,9 +147,9 @@ async def notify_customer_about_payment_options(order_id):
             
         await bot.send_message(
             chat_id=customer['telegram_id'],
-            text=f"💰 *Ödəniş üsulunu seçin*\n\n"
+            text=f"💰 *Ödəniş məlumatları*\n\n"
                  f"Sifariş #{order_id} üçün ödəniş məbləği: *{price:.2f} AZN*\n\n"
-                 f"Zəhmət olmasa, ödəniş üsulunu seçin:",
+                 f"Ödəniş nağd şəkildə ustaya ediləcək.",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
@@ -223,7 +222,7 @@ async def notify_artisan_about_payment_method(order_id, payment_method):
             ))
             
             message_text = (
-                f"💵 *Nağd ödəniş seçildi*\n\n"
+                f"💵 *Ödəniş edilir...*\n\n"
                 f"Sifariş: #{order_id}\n"
                 f"Ümumi məbləğ: {price} AZN"
             )
@@ -339,14 +338,14 @@ async def notify_customer_about_cash_payment(order_id):
         # Create payment confirmation keyboard
         keyboard = InlineKeyboardMarkup()
         keyboard.add(InlineKeyboardButton(
-            "✅ Nağd ödənişi etdim", 
+            "✅ Ödənişi etdim", 
             callback_data=f"cash_payment_made_{order_id}"
         ))
         
         # Send cash payment notification to customer
         await bot.send_message(
             chat_id=customer_telegram_id,
-            text=f"💵 *Nağd ödəniş*\n\n"
+            text=f"💵 *Ödəniş*\n\n"
                  f"Sifariş: #{order_id}\n"
                  f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                  f"Zəhmət olmasa, ödənişi ustaya nağd şəkildə edin və "

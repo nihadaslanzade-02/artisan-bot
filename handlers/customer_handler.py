@@ -164,20 +164,20 @@ def register_handlers(dp):
             # Then show agreement
             agreement_text = (
                 "📜 *Müştəri Müqaviləsi*\n\n"
-                "📌 Qeyd: Bu botdan istifadə etməklə aşağıdakı şərtləri qəbul etmiş olursunuz:\n\n"
-                "1. Sifariş və Ödəniş:\n"
-                "• Sifariş zamanı xidmət yeri, növü və vaxtı düzgün qeyd edilməlidir.\n"
-                "• Ustanın təyin etdiyi qiyməti qəbul etdikdən sonra, ödənişi nağd və ya kartla etməlisiniz\n"
-                "2. Usta ilə Davranış və Vaxt Uyğunluğu:\n"
-                "• Usta sifarişi qəbul etdikdən sonra təyin olunan vaxtda evdə olmağınız gözlənilir.\n"
-                "• Əxlaqa uyğun olmayan davranış və ya saxta sifariş verilməsi halında xidmətlərdən istifadəniz məhdudlaşdırıla bilər.\n"
-                "3. Qiymət Rədd Etmə Hüququ:\n"
-                "• Əgər usta yüksək qiymət təklif edərsə, sifarişi ləğv edə bilərsiniz.\n"
-                "4. Reytinq və Geri Bildirim:\n"
-                "• Sifariş tamamlandıqdan sonra ustaya ulduz və rəy vermək imkanınız var.\n"
-                "• Bu məlumatlar ustaların reytinqinə təsir edir.\n"
-                "5. Zərərçəkmiş Hallar:\n"
-                "• Əgər usta gəlməzsə, sizə 10 AZN endirim kuponu təqdim olunur və bu növbəti sifarişdə istifadə edilə bilər.\n\n"
+                "*📌 Qeyd: Bu botdan istifadə etməklə aşağıdakı şərtləri qəbul etmiş olursunuz:*\n\n"
+                "*1. Sifariş və Ödəniş:*\n"
+                "1.1. Sifariş zamanı xidmət yeri, növü və vaxtı düzgün qeyd edilməlidir.\n"
+                "1.2. Ustanın təyin etdiyi qiyməti qəbul etdikdən sonra, ödənişi nağd və ya kartla etməlisiniz\n"
+                "*2. Usta ilə Davranış və Vaxt Uyğunluğu:*\n"
+                "2.1. Usta sifarişi qəbul etdikdən sonra təyin olunan vaxtda evdə olmağınız gözlənilir.\n"
+                "2.2. Əxlaqa uyğun olmayan davranış və ya saxta sifariş verilməsi halında xidmətlərdən istifadəniz məhdudlaşdırıla bilər.\n"
+                "*3. Qiymət Rədd Etmə Hüququ:*\n"
+                "3.1. Əgər usta yüksək qiymət təklif edərsə, sifarişi ləğv edə bilərsiniz.\n"
+                "*4. Reytinq və Geri Bildirim:*\n"
+                "4.1. Sifariş tamamlandıqdan sonra ustaya ulduz və rəy vermək imkanınız var.\n"
+                "4.2. Bu məlumatlar ustaların reytinqinə təsir edir.\n"
+                "*5. Zərərçəkmiş Hallar:*\n"
+                "5.1. Əgər usta gəlməzsə, sizə 10 AZN endirim kuponu təqdim olunur və bu növbəti sifarişdə istifadə edilə bilər.\n\n"
                 "Bu şərtləri qəbul edib davam etmək istəyirsinizsə,  - ✅ Qəbul edirəm - düyməsini klikləyin."
             )
             
@@ -208,21 +208,21 @@ def register_handlers(dp):
         
         # Then show agreement
         agreement_text = (
-                "📜 *Usta Razılaşması*\n\n"
-                "📌 Qeyd: Bu botdan istifadə etməklə aşağıdakı şərtləri qəbul etmiş olursunuz:\n\n"
-                "1. Sifariş və Ödəniş:\n"
-                "• Sifariş zamanı xidmət yeri, növü və vaxtı düzgün qeyd edilməlidir.\n"
-                "• Ustanın təyin etdiyi qiyməti qəbul etdikdən sonra, ödənişi nağd və ya kartla etməlisiniz\n"
-                "2. Usta ilə Davranış və Vaxt Uyğunluğu:\n"
-                "• Usta sifarişi qəbul etdikdən sonra təyin olunan vaxtda evdə olmağınız gözlənilir.\n"
-                "• Əxlaqa uyğun olmayan davranış və ya saxta sifariş verilməsi halında hesabınız bloklana bilər.\n"
-                "3. Qiymət Rədd Etmə Hüququ:\n"
-                "• Əgər usta yüksək qiymət təklif edərsə, sifarişi ləğv edə bilərsiniz.\n"
-                "4. Reytinq və Geri Bildirim:\n"
-                "• Sifariş tamamlandıqdan sonra ustaya ulduz və rəy vermək imkanınız var.\n"
-                "• Bu məlumatlar ustaların reytinqinə təsir edir.\n"
-                "5. Zərərçəkmiş Hallar:\n"
-                "• Əgər usta gəlməzsə, sizə 10 AZN endirim kuponu təqdim olunur və bu növbəti sifarişdə istifadə edilə bilər.\n\n"
+                "📜 *Müştəri Müqaviləsi*\n\n"
+                "*📌 Qeyd: Bu botdan istifadə etməklə aşağıdakı şərtləri qəbul etmiş olursunuz:*\n\n"
+                "*1. Sifariş və Ödəniş:*\n"
+                "1.1. Sifariş zamanı xidmət yeri, növü və vaxtı düzgün qeyd edilməlidir.\n"
+                "1.2. Ustanın təyin etdiyi qiyməti qəbul etdikdən sonra, ödənişi nağd və ya kartla etməlisiniz\n"
+                "*2. Usta ilə Davranış və Vaxt Uyğunluğu:*\n"
+                "2.1. Usta sifarişi qəbul etdikdən sonra təyin olunan vaxtda evdə olmağınız gözlənilir.\n"
+                "2.2. Əxlaqa uyğun olmayan davranış və ya saxta sifariş verilməsi halında xidmətlərdən istifadəniz məhdudlaşdırıla bilər.\n"
+                "*3. Qiymət Rədd Etmə Hüququ:*\n"
+                "3.1. Əgər usta yüksək qiymət təklif edərsə, sifarişi ləğv edə bilərsiniz.\n"
+                "*4. Reytinq və Geri Bildirim:*\n"
+                "4.1. Sifariş tamamlandıqdan sonra ustaya ulduz və rəy vermək imkanınız var.\n"
+                "4.2. Bu məlumatlar ustaların reytinqinə təsir edir.\n"
+                "*5. Zərərçəkmiş Hallar:*\n"
+                "5.1. Əgər usta gəlməzsə, sizə 10 AZN endirim kuponu təqdim olunur və bu növbəti sifarişdə istifadə edilə bilər.\n\n"
                 "Bu şərtləri qəbul edib davam etmək istəyirsinizsə,  - ✅ Qəbul edirəm - düyməsini klikləyin."
         )
         
@@ -2438,8 +2438,8 @@ def register_handlers(dp):
             if artisan and artisan.get('telegram_id'):
                 await bot.send_message(
                     chat_id=artisan['telegram_id'],
-                    text=f"✅ *Nağd ödəniş təsdiqləndi*\n\n"
-                        f"Müştəri sifariş #{order_id} üçün nağd ödənişi tamamladığını təsdiqlədi.\n\n"
+                    text=f"✅ *Ödəniş təsdiqləndi*\n\n"
+                        f"Müştəri sifariş #{order_id} üçün ödənişi tamamladığını təsdiqlədi.\n\n"
                         f"Sifarişiniz tamamlandı. Təşəkkür edirik!",
                     parse_mode="Markdown"
                 )
@@ -2748,8 +2748,8 @@ def register_handlers(dp):
                 
                 await bot.send_message(
                     chat_id=artisan['telegram_id'],
-                    text=f"💵 *Nağd ödəniş bildirişi*\n\n"
-                        f"Müştəri sifariş #{order_id} üçün nağd ödəniş etdiyini bildirdi.\n"
+                    text=f"💵 *Ödəniş bildirişi*\n\n"
+                        f"Müştəri sifariş #{order_id} üçün ödəniş etdiyini bildirdi.\n"
                         f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                         f"Zəhmət olmasa, ödənişi aldığınızı təsdiqləyin:",
                     reply_markup=keyboard,
@@ -2838,13 +2838,13 @@ def register_handlers(dp):
             # Create payment confirmation keyboard
             keyboard = InlineKeyboardMarkup()
             keyboard.add(InlineKeyboardButton(
-                "✅ Nağd ödənişi etdim", 
+                "✅ Ödənişi etdim", 
                 callback_data=f"cash_payment_made_{order_id}"
             ))
             
             # Send cash payment notification to customer
             await callback_query.message.answer(
-                f"💵 *Nağd ödəniş*\n\n"
+                f"💵 *Ödəniş*\n\n"
                 f"Sifariş: #{order_id}\n"
                 f"Məbləğ: {order.get('price', 0)} AZN\n\n"
                 f"Zəhmət olmasa, ödənişi ustaya nağd şəkildə edin və "
