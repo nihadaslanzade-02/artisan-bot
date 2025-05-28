@@ -126,14 +126,13 @@ def get_customer_by_id(customer_id):
     return result
 
 
-def create_customer(telegram_id, name, phone=None, city=None):
+def create_customer(telegram_id, name, phone=None):
     """Create a new customer and return their ID
     
     Args:
         telegram_id (int): Telegram user ID
         name (str): Customer name
         phone (str, optional): Customer phone number
-        city (str, optional): Customer city
         
     Returns:
         int: ID of the created customer
@@ -153,8 +152,8 @@ def create_customer(telegram_id, name, phone=None, city=None):
         
     phone = encrypt_data(phone) if phone else None
     query = """
-        INSERT INTO customers (telegram_id, telegram_id_hash, name, phone, city, created_at)
-        VALUES (%s, %s, %s, %s, %s, NOW())
+        INSERT INTO customers (telegram_id, telegram_id_hash, name, phone, created_at)
+        VALUES (%s, %s, %s, %s, NOW())
     """
     conn = None
     cursor = None
@@ -176,14 +175,13 @@ def create_customer(telegram_id, name, phone=None, city=None):
             conn.close()
 
 
-def get_or_create_customer(telegram_id, name, phone=None, city=None):
+def get_or_create_customer(telegram_id, name, phone=None):
     """Get customer ID by Telegram ID or create if not exists
     
     Args:
         telegram_id (int): Telegram user ID
         name (str): Customer name
         phone (str, optional): Customer phone number
-        city (str, optional): Customer city
         
     Returns:
         int: Customer ID
@@ -191,7 +189,7 @@ def get_or_create_customer(telegram_id, name, phone=None, city=None):
     customer = get_customer_by_telegram_id(telegram_id)
     
     if not customer:
-        customer_id = create_customer(telegram_id, name, phone, city)
+        customer_id = create_customer(telegram_id, name, phone)
         return customer_id
     
     return customer['id']
