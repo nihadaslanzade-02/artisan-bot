@@ -57,6 +57,10 @@ class AdminRefundState(StatesGroup):
 class AdminDeleteUserState(StatesGroup):
     waiting_for_user_id = State()
 
+class AdminBulkMessageState(StatesGroup):
+    waiting_for_artisan_message = State()
+    waiting_for_customer_message = State()
+
 
 def is_admin(user_id):
     """Check if user is admin"""
@@ -222,7 +226,9 @@ async def admin_panel(message: types.Message):
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
         InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
-        InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user")
+        InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
+        InlineKeyboardButton("📨 Ustalara Toplu Mesaj Göndər", callback_data="send_bulk_message_to_artisans"),
+        InlineKeyboardButton("📨 Müştərilərə Toplu Mesaj Göndər", callback_data="send_bulk_message_to_customers")
     )
     
     await message.answer(
@@ -254,7 +260,9 @@ async def admin_command(message: types.Message):
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
         InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
-        InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user")
+        InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
+        InlineKeyboardButton("📨 Ustalara Toplu Mesaj Göndər", callback_data="send_bulk_message_to_artisans"),
+        InlineKeyboardButton("📨 Müştərilərə Toplu Mesaj Göndər", callback_data="send_bulk_message_to_customers")
     )
     
     await message.answer(
@@ -265,7 +273,7 @@ async def admin_command(message: types.Message):
     )
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith('admin_'))
+@dp.callback_query_handler(lambda c: c.data.startswith('admin_') or c.data in ['send_bulk_message_to_artisans', 'send_bulk_message_to_customers'])
 async def admin_menu_handlers(callback_query: types.CallbackQuery):
     """Handle admin menu options"""
     try:
@@ -285,6 +293,10 @@ async def admin_menu_handlers(callback_query: types.CallbackQuery):
             await show_admin_stats(callback_query.message)
         elif menu_option == "admin_delete_user":
             await show_admin_delete_user(callback_query.message)
+        elif menu_option == "send_bulk_message_to_artisans":
+            await send_bulk_message_to_artisans(callback_query.message)
+        elif menu_option == "send_bulk_message_to_customers":
+            await send_bulk_message_to_customers(callback_query.message)
         else:
             await callback_query.answer("Bu funksiya hələ hazır deyil.")
         
@@ -2391,7 +2403,9 @@ async def back_to_admin_menu(callback_query: types.CallbackQuery):
             InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
             InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
             InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
-            InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user")
+            InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
+            InlineKeyboardButton("📨 Ustalara Toplu Mesaj Göndər", callback_data="send_bulk_message_to_artisans"),
+            InlineKeyboardButton("📨 Müştərilərə Toplu Mesaj Göndər", callback_data="send_bulk_message_to_customers")
         )
         
         await callback_query.message.answer(
@@ -2790,7 +2804,7 @@ def register_all_handlers():
     dp.register_message_handler(admin_command, commands=['admin'])
     
     # Admin menu and general navigation
-    dp.register_callback_query_handler(admin_menu_handlers, lambda c: c.data.startswith('admin_'))
+    dp.register_callback_query_handler(admin_menu_handlers, lambda c: c.data.startswith('admin_') or c.data in ['send_bulk_message_to_artisans', 'send_bulk_message_to_customers'])
     dp.register_callback_query_handler(back_to_admin_menu, lambda c: c.data == "back_to_admin")
     
     # Order related handlers
@@ -2825,6 +2839,11 @@ def register_all_handlers():
     dp.register_message_handler(process_refund_reason, state=AdminRefundState.waiting_for_reason)
     dp.register_callback_query_handler(decline_refund, lambda c: c.data.startswith('decline_refund_'))
     dp.register_callback_query_handler(mark_refund_completed, lambda c: c.data.startswith('refund_completed_'))
+    
+    dp.register_callback_query_handler(send_bulk_message_to_artisans, lambda c: c.data == "send_bulk_message_to_artisans")
+    dp.register_callback_query_handler(send_bulk_message_to_customers, lambda c: c.data == "send_bulk_message_to_customers")
+    dp.register_message_handler(process_artisan_bulk_message, state=AdminBulkMessageState.waiting_for_artisan_message)
+    dp.register_message_handler(process_customer_bulk_message, state=AdminBulkMessageState.waiting_for_customer_message)
     
     logger.info("All handlers registered successfully!")
 
@@ -2935,6 +2954,393 @@ async def admin_webhook_handler(request):
         logger.error(f"Error in admin webhook handler: {e}")
         return web.json_response({'status': 'error', 'message': str(e)})
     
+async def send_bulk_message_to_artisans(message):
+    """Start bulk message sending process for artisans"""
+    try:
+        # Get count of active artisans
+        from db import execute_query
+        
+        count_query = """
+            SELECT COUNT(*) as count
+            FROM artisans
+            WHERE active = TRUE AND telegram_id IS NOT NULL
+        """
+        
+        result = execute_query(count_query, fetchone=True, dict_cursor=True)
+        artisan_count = result['count'] if result else 0
+        
+        await message.answer(
+            f"📨 *Ustalara Toplu Mesaj Göndər*\n\n"
+            f"Aktiv usta sayı: {artisan_count}\n\n"
+            f"Zəhmət olmasa, bütün ustalara göndərmək istədiyiniz mesajı daxil edin:\n\n"
+            f"⚠️ Bu mesaj sistemdəki bütün aktiv ustalara göndəriləcək!",
+            parse_mode="Markdown"
+        )
+        
+        await AdminBulkMessageState.waiting_for_artisan_message.set()
+        
+    except Exception as e:
+        logger.error(f"Error in send_bulk_message_to_artisans: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+async def send_bulk_message_to_customers(message):
+    """Start bulk message sending process for customers"""
+    try:
+        # Get count of active customers
+        from db import execute_query
+        
+        count_query = """
+            SELECT COUNT(*) as count
+            FROM customers
+            WHERE active = TRUE AND telegram_id IS NOT NULL
+        """
+        
+        result = execute_query(count_query, fetchone=True, dict_cursor=True)
+        customer_count = result['count'] if result else 0
+        
+        await message.answer(
+            f"📨 *Müştərilərə Toplu Mesaj Göndər*\n\n"
+            f"Aktiv müştəri sayı: {customer_count}\n\n"
+            f"Zəhmət olmasa, bütün müştərilərə göndərmək istədiyiniz mesajı daxil edin:\n\n"
+            f"⚠️ Bu mesaj sistemdəki bütün aktiv müştərilərə göndəriləcək!",
+            parse_mode="Markdown"
+        )
+        
+        await AdminBulkMessageState.waiting_for_customer_message.set()
+        
+    except Exception as e:
+        logger.error(f"Error in send_bulk_message_to_customers: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+@dp.message_handler(state=AdminBulkMessageState.waiting_for_artisan_message)
+async def process_artisan_bulk_message(message: types.Message, state: FSMContext):
+    """Process bulk message to artisans"""
+    try:
+        # Get message content
+        bulk_message = message.text.strip()
+        
+        if len(bulk_message) < 1:
+            await message.answer("❌ Mesaj boş ola bilməz. Zəhmət olmasa, yenidən daxil edin:")
+            return
+        
+        # Get all active artisans
+        from db import execute_query
+        from crypto_service import decrypt_data
+        
+        artisans_query = """
+            SELECT telegram_id, name
+            FROM artisans
+            WHERE active = TRUE AND telegram_id IS NOT NULL
+        """
+        
+        artisans_encrypted = execute_query(artisans_query, fetchall=True, dict_cursor=True)
+        
+        if not artisans_encrypted:
+            await message.answer("❌ Aktiv usta tapılmadı.")
+            await state.finish()
+            return
+        
+        # Decrypt telegram_id for each artisan
+        artisans = []
+        for artisan_enc in artisans_encrypted:
+            try:
+                decrypted_telegram_id = decrypt_data(artisan_enc['telegram_id'])
+                if decrypted_telegram_id:
+                    artisans.append({
+                        'telegram_id': int(decrypted_telegram_id),
+                        'name': decrypt_data(artisan_enc['name']) if artisan_enc['name'] else 'Unknown'
+                    })
+            except Exception as e:
+                logger.error(f"Error decrypting artisan data: {e}")
+                continue
+        
+        if not artisans:
+            await message.answer("❌ Telegram ID-si olan aktiv usta tapılmadı.")
+            await state.finish()
+            return
+        
+        # Send confirmation
+        await message.answer(
+            f"📨 Toplu mesaj göndərilir...\n"
+            f"Hədəf: {len(artisans)} usta\n\n"
+            f"Mesaj: {bulk_message}"
+        )
+        
+        # Send message to all artisans
+        success_count = 0
+        failed_count = 0
+        
+        for artisan in artisans:
+            try:
+                await bot.send_message(
+                    chat_id=artisan['telegram_id'],
+                    text=f"📢 *Admin Mesajı*\n\n{bulk_message}\n\n"
+                         f"Bu mesaj sistemin admin heyəti tərəfindən göndərilib. "
+                         f"Cavab vermək üçün müştəri dəstəyinə yazın: {SUPPORT_PHONE}",
+                    parse_mode="Markdown"
+                )
+                success_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send bulk message to artisan {artisan['telegram_id']}: {e}")
+                failed_count += 1
+        
+        # Send summary
+        await message.answer(
+            f"✅ <b>Toplu mesaj göndərildi!</b>\n\n"
+            f"📊 Nəticə:\n"
+            f"• Uğurla göndərildi: {success_count}\n"
+            f"• Uğursuz: {failed_count}\n"
+            f"• Ümumi: {len(artisans)}",
+            parse_mode="HTML"
+        )
+        
+        # Clear state
+        await state.finish()
+        
+        # Automatically return to admin menu
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(
+            InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
+            InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+            InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
+            InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+            InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
+            InlineKeyboardButton("📨 Ustalara Toplu Mesaj Göndər", callback_data="send_bulk_message_to_artisans"),
+            InlineKeyboardButton("📨 Müştərilərə Toplu Mesaj Göndər", callback_data="send_bulk_message_to_customers")
+        )
+        
+        await message.answer(
+            "👨‍💼 *Admin İdarəetmə Paneli*\n\n"
+            "Zəhmət olmasa, aşağıdakı bölmələrdən birini seçin:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in process_artisan_bulk_message: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+        await state.finish()
+
+@dp.message_handler(state=AdminBulkMessageState.waiting_for_customer_message)
+async def process_customer_bulk_message(message: types.Message, state: FSMContext):
+    """Process bulk message to customers"""
+    try:
+        # Get message content
+        bulk_message = message.text.strip()
+        
+        if len(bulk_message) < 1:
+            await message.answer("❌ Mesaj boş ola bilməz. Zəhmət olmasa, yenidən daxil edin:")
+            return
+        
+        # Get all active customers
+        from db import execute_query
+        from crypto_service import decrypt_data
+        
+        customers_query = """
+            SELECT telegram_id, name
+            FROM customers
+            WHERE active = TRUE AND telegram_id IS NOT NULL
+        """
+        
+        customers_encrypted = execute_query(customers_query, fetchall=True, dict_cursor=True)
+        
+        if not customers_encrypted:
+            await message.answer("❌ Aktiv müştəri tapılmadı.")
+            await state.finish()
+            return
+        
+        # Decrypt telegram_id for each customer
+        customers = []
+        for customer_enc in customers_encrypted:
+            try:
+                decrypted_telegram_id = decrypt_data(customer_enc['telegram_id'])
+                if decrypted_telegram_id:
+                    customers.append({
+                        'telegram_id': int(decrypted_telegram_id),
+                        'name': decrypt_data(customer_enc['name']) if customer_enc['name'] else 'Unknown'
+                    })
+            except Exception as e:
+                logger.error(f"Error decrypting customer data: {e}")
+                continue
+        
+        if not customers:
+            await message.answer("❌ Telegram ID-si olan aktiv müştəri tapılmadı.")
+            await state.finish()
+            return
+        
+        # Send confirmation
+        await message.answer(
+            f"📨 Toplu mesaj göndərilir...\n"
+            f"Hədəf: {len(customers)} müştəri\n\n"
+            f"Mesaj: {bulk_message}"
+        )
+        
+        # Send message to all customers
+        success_count = 0
+        failed_count = 0
+        
+        for customer in customers:
+            try:
+                await bot.send_message(
+                    chat_id=customer['telegram_id'],
+                    text=f"📢 *Admin Mesajı*\n\n{bulk_message}\n\n"
+                         f"Bu mesaj sistemin admin heyəti tərəfindən göndərilib. "
+                         f"Cavab vermək üçün müştəri dəstəyinə yazın: {SUPPORT_PHONE}",
+                    parse_mode="Markdown"
+                )
+                success_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send bulk message to customer {customer['telegram_id']}: {e}")
+                failed_count += 1
+        
+        # Send summary
+        await message.answer(
+            f"✅ <b>Toplu mesaj göndərildi!</b>\n\n"
+            f"📊 Nəticə:\n"
+            f"• Uğurla göndərildi: {success_count}\n"
+            f"• Uğursuz: {failed_count}\n"
+            f"• Ümumi: {len(customers)}",
+            parse_mode="HTML"
+        )
+        
+        # Clear state
+        await state.finish()
+        
+        # Automatically return to admin menu
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(
+            InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
+            InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+            InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
+            InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+            InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
+            InlineKeyboardButton("📨 Ustalara Toplu Mesaj Göndər", callback_data="send_bulk_message_to_artisans"),
+            InlineKeyboardButton("📨 Müştərilərə Toplu Mesaj Göndər", callback_data="send_bulk_message_to_customers")
+        )
+        
+        await message.answer(
+            "👨‍💼 *Admin İdarəetmə Paneli*\n\n"
+            "Zəhmət olmasa, aşağıdakı bölmələrdən birini seçin:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in process_customer_bulk_message: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+        await state.finish()
+
+async def show_admin_orders(message):
+    """Show orders for admin to manage"""
+    try:
+        # Get recent orders
+        from db import execute_query, get_artisan_by_id, get_customer_by_id
+        from crypto_service import decrypt_data
+        from db_encryption_wrapper import decrypt_dict_data
+        
+        query = """
+            SELECT o.id, o.service, o.price, o.status, o.created_at, 
+                   c.id as customer_id, a.id as artisan_id
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.id
+            JOIN artisans a ON o.artisan_id = a.id
+            ORDER BY o.created_at DESC
+            LIMIT 10
+        """
+        
+        orders = execute_query(query, fetchall=True, dict_cursor=True)
+        
+        if not orders:
+            await message.answer("📭 Aktiv sifariş tapılmadı.")
+            return
+        
+        # Create filter options
+        keyboard = InlineKeyboardMarkup(row_width=3)
+        keyboard.add(
+            InlineKeyboardButton("🟢 Aktiv", callback_data="filter_orders_active"),
+            InlineKeyboardButton("✅ Tamamlanmış", callback_data="filter_orders_completed"),
+            InlineKeyboardButton("❌ Ləğv edilmiş", callback_data="filter_orders_cancelled"),
+            InlineKeyboardButton("🔄 Hamısı", callback_data="filter_orders_all")
+        )
+        
+        await message.answer(
+            "📋 <b>Son Sifarişlər</b>\n\n"
+            "Sifarişlər aşağıda göstərilir. Filterləmək üçün bir seçim edin:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+        # Display recent orders
+        for order in orders:
+            # Şifreleri çözülmüş müşteri ve usta bilgilerini al
+            customer_encrypted = get_customer_by_id(order['customer_id'])
+            artisan_encrypted = get_artisan_by_id(order['artisan_id'])
+            
+            # Şifreleri çöz ve maskele
+            customer = decrypt_dict_data(customer_encrypted, mask=False)
+            artisan = decrypt_dict_data(artisan_encrypted, mask=False)
+            
+            # Format date
+            created_at = order['created_at']
+            if isinstance(created_at, str):
+                formatted_date = created_at
+            else:
+                formatted_date = created_at.strftime("%d.%m.%Y %H:%M")
+            
+            # Format status
+            status = order['status']
+            if status == 'pending':
+                status_text = "⏳ Gözləyir"
+            elif status == 'accepted':
+                status_text = "🟢 Qəbul edilib"
+            elif status == 'completed':
+                status_text = "✅ Tamamlanıb"
+            elif status == 'cancelled':
+                status_text = "❌ Ləğv edilib"
+            else:
+                status_text = status
+            
+            # Create order text
+            order_text = (
+                f"🔹 <b>Sifariş #{order['id']}</b>\n"
+                f"📅 Tarix: {formatted_date}\n"
+                f"👤 Müştəri: {customer['name']}\n"
+                f"👷‍♂️ Usta: {artisan['name']}\n"
+                f"🛠 Xidmət: {order['service']}\n"
+                f"💰 Məbləğ: {order.get('price', 'Təyin edilməyib')} AZN\n"
+                f"🔄 Status: {status_text}\n"
+                f"📝 Qeyd: {order.get('note', '')}"
+            )
+            
+            # Create action buttons
+            order_keyboard = InlineKeyboardMarkup(row_width=1)
+            order_keyboard.add(
+                InlineKeyboardButton("ℹ️ Ətraflı Məlumat", callback_data=f"order_details_{order['id']}"),
+                InlineKeyboardButton("💰 Ödəniş Detalları", callback_data=f"order_payment_{order['id']}")
+            )
+            
+            # Add status change buttons based on current status
+            if status == 'pending':
+                order_keyboard.add(
+                    InlineKeyboardButton("✅ Qəbul et", callback_data=f"order_accept_{order['id']}"),
+                    InlineKeyboardButton("❌ Ləğv et", callback_data=f"order_cancel_{order['id']}")
+                )
+            elif status == 'accepted':
+                order_keyboard.add(
+                    InlineKeyboardButton("✅ Tamamla", callback_data=f"order_complete_{order['id']}"),
+                    InlineKeyboardButton("❌ Ləğv et", callback_data=f"order_cancel_{order['id']}")
+                )
+            
+            await message.answer(
+                order_text,
+                reply_markup=order_keyboard,
+                parse_mode="HTML"
+            )
+    
+    except Exception as e:
+        logger.error(f"Error in show_admin_orders: {e}")
+        await message.answer("❌ Sifarişlər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
 if __name__ == '__main__':
     # Register all handlers
     register_all_handlers()

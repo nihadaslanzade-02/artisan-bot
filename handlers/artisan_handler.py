@@ -1862,7 +1862,8 @@ def register_handlers(dp):
                 InlineKeyboardButton("🛠 Xidmət növünü dəyiş", callback_data="change_artisan_service"),
                 InlineKeyboardButton("📍 Yeri yenilə", callback_data="update_artisan_location"),
                 InlineKeyboardButton("🔄 Aktivliyi dəyiş", callback_data="toggle_artisan_active"),
-                InlineKeyboardButton("💳 Ödəniş məlumatlarını tənzimlə", callback_data="setup_payment_info"),
+                # COMMENTED OUT: Payment information setup button
+                # InlineKeyboardButton("💳 Ödəniş məlumatlarını tənzimlə", callback_data="setup_payment_info"),
                 InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu")
             )
             
@@ -3749,33 +3750,33 @@ def register_handlers(dp):
             await state.finish()
             await show_artisan_menu(callback_query.message)
 
-    @dp.callback_query_handler(lambda c: c.data == "setup_payment_info", state="*")
-    async def setup_payment_info(callback_query: types.CallbackQuery, state: FSMContext):
-        """Setup payment card information"""
-        try:
-            # Clear any active state
-            current_state = await state.get_state()
-            if current_state:
-                await state.finish()
-            
-            await callback_query.message.answer(
-                "💳 *Ödəniş məlumatlarının tənzimlənməsi*\n\n"
-                "Müştərilərdən kartla ödəniş qəbul etmək üçün kart məlumatlarınızı təqdim edin.\n\n"
-                "Zəhmət olmasa, kart nömrənizi daxil edin (məsələn: 4169 7388 5555 6666):",
-                parse_mode="Markdown"
-            )
-            
-            await ArtisanProfileStates.entering_card_number.set()
-            await callback_query.answer()
-            
-        except Exception as e:
-            logger.error(f"Error in setup_payment_info: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
-            await callback_query.answer()
-            await state.finish()
-            await show_artisan_menu(callback_query.message)
+    # @dp.callback_query_handler(lambda c: c.data == "setup_payment_info", state="*")
+    # async def setup_payment_info(callback_query: types.CallbackQuery, state: FSMContext):
+    #     """Setup payment card information"""
+    #     try:
+    #         # Clear any active state
+    #         current_state = await state.get_state()
+    #         if current_state:
+    #             await state.finish()
+    #         
+    #         await callback_query.message.answer(
+    #             "💳 *Ödəniş məlumatlarının tənzimlənməsi*\n\n"
+    #             "Müştərilərdən kartla ödəniş qəbul etmək üçün kart məlumatlarınızı təqdim edin.\n\n"
+    #             "Zəhmət olmasa, kart nömrənizi daxil edin (məsələn: 4169 7388 5555 6666):",
+    #             parse_mode="Markdown"
+    #         )
+    #         
+    #         await ArtisanProfileStates.entering_card_number.set()
+    #         await callback_query.answer()
+    #         
+    #     except Exception as e:
+    #         logger.error(f"Error in setup_payment_info: {e}")
+    #         await callback_query.message.answer(
+    #             "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+    #         )
+    #         await callback_query.answer()
+    #         await state.finish()
+    #         await show_artisan_menu(callback_query.message)
 
 
     # Handler for entering card number
