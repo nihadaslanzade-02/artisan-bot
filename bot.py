@@ -3026,6 +3026,10 @@ async def process_artisan_bulk_message(message: types.Message, state: FSMContext
         # Get all active artisans
         from db import execute_query
         from crypto_service import decrypt_data
+        from aiogram.utils.exceptions import (
+            BotBlocked, ChatNotFound, UserDeactivated, 
+            TelegramAPIError, RetryAfter, MigrateToChat
+        )
         
         artisans_query = """
             SELECT telegram_id, name
@@ -3042,16 +3046,33 @@ async def process_artisan_bulk_message(message: types.Message, state: FSMContext
         
         # Decrypt telegram_id for each artisan
         artisans = []
+        decrypt_errors = 0
+        
         for artisan_enc in artisans_encrypted:
             try:
                 decrypted_telegram_id = decrypt_data(artisan_enc['telegram_id'])
-                if decrypted_telegram_id:
-                    artisans.append({
-                        'telegram_id': int(decrypted_telegram_id),
-                        'name': decrypt_data(artisan_enc['name']) if artisan_enc['name'] else 'Unknown'
-                    })
+                decrypted_name = decrypt_data(artisan_enc['name']) if artisan_enc['name'] else 'Unknown'
+                
+                # Validate telegram_id
+                if decrypted_telegram_id and str(decrypted_telegram_id).isdigit():
+                    telegram_id = int(decrypted_telegram_id)
+                    # Telegram user IDs are typically positive integers
+                    if telegram_id > 0:
+                        artisans.append({
+                            'telegram_id': telegram_id,
+                            'name': decrypted_name
+                        })
+                        logger.info(f"Successfully decrypted artisan: {telegram_id} - {decrypted_name}")
+                    else:
+                        logger.error(f"Invalid telegram_id for artisan: {decrypted_telegram_id}")
+                        decrypt_errors += 1
+                else:
+                    logger.error(f"Failed to decrypt or invalid telegram_id for artisan: {artisan_enc['telegram_id']}")
+                    decrypt_errors += 1
+                    
             except Exception as e:
-                logger.error(f"Error decrypting artisan data: {e}")
+                logger.error(f"Error decrypting artisan data: {e}, telegram_id: {artisan_enc.get('telegram_id')}")
+                decrypt_errors += 1
                 continue
         
         if not artisans:
@@ -3059,16 +3080,24 @@ async def process_artisan_bulk_message(message: types.Message, state: FSMContext
             await state.finish()
             return
         
-        # Send confirmation
-        await message.answer(
+        # Send confirmation with decrypt error info
+        confirmation_text = (
             f"📨 Toplu mesaj göndərilir...\n"
-            f"Hədəf: {len(artisans)} usta\n\n"
-            f"Mesaj: {bulk_message}"
+            f"Hədəf: {len(artisans)} usta\n"
         )
+        if decrypt_errors > 0:
+            confirmation_text += f"⚠️ Şifrə çözümlə problemi: {decrypt_errors} usta\n"
+        confirmation_text += f"\nMesaj: {bulk_message}"
+        
+        await message.answer(confirmation_text)
         
         # Send message to all artisans
         success_count = 0
         failed_count = 0
+        bot_blocked_count = 0
+        chat_not_found_count = 0
+        user_deactivated_count = 0
+        other_errors_count = 0
         
         for artisan in artisans:
             try:
@@ -3080,19 +3109,65 @@ async def process_artisan_bulk_message(message: types.Message, state: FSMContext
                     parse_mode="Markdown"
                 )
                 success_count += 1
+                logger.info(f"✅ Bulk message sent successfully to artisan {artisan['telegram_id']} ({artisan['name']})")
+                
+            except BotBlocked:
+                logger.warning(f"❌ Bot blocked by artisan {artisan['telegram_id']} ({artisan['name']})")
+                bot_blocked_count += 1
+                failed_count += 1
+                
+            except ChatNotFound:
+                logger.warning(f"❌ Chat not found for artisan {artisan['telegram_id']} ({artisan['name']})")
+                chat_not_found_count += 1
+                failed_count += 1
+                
+            except UserDeactivated:
+                logger.warning(f"❌ User deactivated for artisan {artisan['telegram_id']} ({artisan['name']})")
+                user_deactivated_count += 1
+                failed_count += 1
+                
+            except MigrateToChat as e:
+                logger.warning(f"❌ Chat migrated for artisan {artisan['telegram_id']} ({artisan['name']}) to {e.migrate_to_chat_id}")
+                other_errors_count += 1
+                failed_count += 1
+                
+            except RetryAfter as e:
+                logger.warning(f"⏰ Rate limited for artisan {artisan['telegram_id']} ({artisan['name']}), retry after {e.timeout} seconds")
+                # You might want to implement retry logic here
+                other_errors_count += 1
+                failed_count += 1
+                
+            except TelegramAPIError as e:
+                logger.error(f"❌ Telegram API error for artisan {artisan['telegram_id']} ({artisan['name']}): {e}")
+                other_errors_count += 1
+                failed_count += 1
+                
             except Exception as e:
-                logger.error(f"Failed to send bulk message to artisan {artisan['telegram_id']}: {e}")
+                logger.error(f"❌ Unexpected error for artisan {artisan['telegram_id']} ({artisan['name']}): {e}")
+                other_errors_count += 1
                 failed_count += 1
         
-        # Send summary
-        await message.answer(
-            f"✅ <b>Toplu mesaj göndərildi!</b>\n\n"
-            f"📊 Nəticə:\n"
-            f"• Uğurla göndərildi: {success_count}\n"
-            f"• Uğursuz: {failed_count}\n"
-            f"• Ümumi: {len(artisans)}",
-            parse_mode="HTML"
-        )
+        # Send detailed summary
+        summary_text = f"✅ <b>Toplu mesaj göndərildi!</b>\n\n"
+        summary_text += f"📊 <b>Nəticə:</b>\n"
+        summary_text += f"• ✅ Uğurla göndərildi: {success_count}\n"
+        summary_text += f"• ❌ Uğursuz: {failed_count}\n"
+        summary_text += f"• 📊 Ümumi: {len(artisans)}\n\n"
+        
+        if failed_count > 0:
+            summary_text += f"<b>Uğursuzluq detalları:</b>\n"
+            if bot_blocked_count > 0:
+                summary_text += f"• 🚫 Bot bloklanıb: {bot_blocked_count}\n"
+            if chat_not_found_count > 0:
+                summary_text += f"• 🔍 Chat tapılmadı: {chat_not_found_count}\n"
+            if user_deactivated_count > 0:
+                summary_text += f"• 💤 İstifadəçi deaktiv: {user_deactivated_count}\n"
+            if decrypt_errors > 0:
+                summary_text += f"• 🔐 Şifrə problemi: {decrypt_errors}\n"
+            if other_errors_count > 0:
+                summary_text += f"• ⚠️ Digər xətalar: {other_errors_count}\n"
+        
+        await message.answer(summary_text, parse_mode="HTML")
         
         # Clear state
         await state.finish()
@@ -3135,6 +3210,10 @@ async def process_customer_bulk_message(message: types.Message, state: FSMContex
         # Get all active customers
         from db import execute_query
         from crypto_service import decrypt_data
+        from aiogram.utils.exceptions import (
+            BotBlocked, ChatNotFound, UserDeactivated, 
+            TelegramAPIError, RetryAfter, MigrateToChat
+        )
         
         customers_query = """
             SELECT telegram_id, name
@@ -3151,16 +3230,33 @@ async def process_customer_bulk_message(message: types.Message, state: FSMContex
         
         # Decrypt telegram_id for each customer
         customers = []
+        decrypt_errors = 0
+        
         for customer_enc in customers_encrypted:
             try:
                 decrypted_telegram_id = decrypt_data(customer_enc['telegram_id'])
-                if decrypted_telegram_id:
-                    customers.append({
-                        'telegram_id': int(decrypted_telegram_id),
-                        'name': decrypt_data(customer_enc['name']) if customer_enc['name'] else 'Unknown'
-                    })
+                decrypted_name = decrypt_data(customer_enc['name']) if customer_enc['name'] else 'Unknown'
+                
+                # Validate telegram_id
+                if decrypted_telegram_id and str(decrypted_telegram_id).isdigit():
+                    telegram_id = int(decrypted_telegram_id)
+                    # Telegram user IDs are typically positive integers
+                    if telegram_id > 0:
+                        customers.append({
+                            'telegram_id': telegram_id,
+                            'name': decrypted_name
+                        })
+                        logger.info(f"Successfully decrypted customer: {telegram_id} - {decrypted_name}")
+                    else:
+                        logger.error(f"Invalid telegram_id for customer: {decrypted_telegram_id}")
+                        decrypt_errors += 1
+                else:
+                    logger.error(f"Failed to decrypt or invalid telegram_id for customer: {customer_enc['telegram_id']}")
+                    decrypt_errors += 1
+                    
             except Exception as e:
-                logger.error(f"Error decrypting customer data: {e}")
+                logger.error(f"Error decrypting customer data: {e}, telegram_id: {customer_enc.get('telegram_id')}")
+                decrypt_errors += 1
                 continue
         
         if not customers:
@@ -3168,16 +3264,24 @@ async def process_customer_bulk_message(message: types.Message, state: FSMContex
             await state.finish()
             return
         
-        # Send confirmation
-        await message.answer(
+        # Send confirmation with decrypt error info
+        confirmation_text = (
             f"📨 Toplu mesaj göndərilir...\n"
-            f"Hədəf: {len(customers)} müştəri\n\n"
-            f"Mesaj: {bulk_message}"
+            f"Hədəf: {len(customers)} müştəri\n"
         )
+        if decrypt_errors > 0:
+            confirmation_text += f"⚠️ Şifrə çözümlə problemi: {decrypt_errors} müştəri\n"
+        confirmation_text += f"\nMesaj: {bulk_message}"
+        
+        await message.answer(confirmation_text)
         
         # Send message to all customers
         success_count = 0
         failed_count = 0
+        bot_blocked_count = 0
+        chat_not_found_count = 0
+        user_deactivated_count = 0
+        other_errors_count = 0
         
         for customer in customers:
             try:
@@ -3189,19 +3293,65 @@ async def process_customer_bulk_message(message: types.Message, state: FSMContex
                     parse_mode="Markdown"
                 )
                 success_count += 1
+                logger.info(f"✅ Bulk message sent successfully to customer {customer['telegram_id']} ({customer['name']})")
+                
+            except BotBlocked:
+                logger.warning(f"❌ Bot blocked by customer {customer['telegram_id']} ({customer['name']})")
+                bot_blocked_count += 1
+                failed_count += 1
+                
+            except ChatNotFound:
+                logger.warning(f"❌ Chat not found for customer {customer['telegram_id']} ({customer['name']})")
+                chat_not_found_count += 1
+                failed_count += 1
+                
+            except UserDeactivated:
+                logger.warning(f"❌ User deactivated for customer {customer['telegram_id']} ({customer['name']})")
+                user_deactivated_count += 1
+                failed_count += 1
+                
+            except MigrateToChat as e:
+                logger.warning(f"❌ Chat migrated for customer {customer['telegram_id']} ({customer['name']}) to {e.migrate_to_chat_id}")
+                other_errors_count += 1
+                failed_count += 1
+                
+            except RetryAfter as e:
+                logger.warning(f"⏰ Rate limited for customer {customer['telegram_id']} ({customer['name']}), retry after {e.timeout} seconds")
+                # You might want to implement retry logic here
+                other_errors_count += 1
+                failed_count += 1
+                
+            except TelegramAPIError as e:
+                logger.error(f"❌ Telegram API error for customer {customer['telegram_id']} ({customer['name']}): {e}")
+                other_errors_count += 1
+                failed_count += 1
+                
             except Exception as e:
-                logger.error(f"Failed to send bulk message to customer {customer['telegram_id']}: {e}")
+                logger.error(f"❌ Unexpected error for customer {customer['telegram_id']} ({customer['name']}): {e}")
+                other_errors_count += 1
                 failed_count += 1
         
-        # Send summary
-        await message.answer(
-            f"✅ <b>Toplu mesaj göndərildi!</b>\n\n"
-            f"📊 Nəticə:\n"
-            f"• Uğurla göndərildi: {success_count}\n"
-            f"• Uğursuz: {failed_count}\n"
-            f"• Ümumi: {len(customers)}",
-            parse_mode="HTML"
-        )
+        # Send detailed summary
+        summary_text = f"✅ <b>Toplu mesaj göndərildi!</b>\n\n"
+        summary_text += f"📊 <b>Nəticə:</b>\n"
+        summary_text += f"• ✅ Uğurla göndərildi: {success_count}\n"
+        summary_text += f"• ❌ Uğursuz: {failed_count}\n"
+        summary_text += f"• 📊 Ümumi: {len(customers)}\n\n"
+        
+        if failed_count > 0:
+            summary_text += f"<b>Uğursuzluq detalları:</b>\n"
+            if bot_blocked_count > 0:
+                summary_text += f"• 🚫 Bot bloklanıb: {bot_blocked_count}\n"
+            if chat_not_found_count > 0:
+                summary_text += f"• 🔍 Chat tapılmadı: {chat_not_found_count}\n"
+            if user_deactivated_count > 0:
+                summary_text += f"• 💤 İstifadəçi deaktiv: {user_deactivated_count}\n"
+            if decrypt_errors > 0:
+                summary_text += f"• 🔐 Şifrə problemi: {decrypt_errors}\n"
+            if other_errors_count > 0:
+                summary_text += f"• ⚠️ Digər xətalar: {other_errors_count}\n"
+        
+        await message.answer(summary_text, parse_mode="HTML")
         
         # Clear state
         await state.finish()
