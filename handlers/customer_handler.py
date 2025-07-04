@@ -122,7 +122,7 @@ def register_handlers(dp):
                         f"⛔ *Hesabınız bloklanıb*\n\n"
                         f"Səbəb: {reason}\n\n"
                         f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n"
-                        f"Ödəniş etmək üçün:"
+                        f"Ödəniş etmək üçün aşağıdakı düyməni istifadə edin:"
                     )
 
                     kb = InlineKeyboardMarkup().add(
@@ -969,9 +969,22 @@ def register_handlers(dp):
             logger.info(f"Found {len(artisans) if artisans else 0} nearby artisans for service {service}")
             
             if not artisans:
+                # Bolt-style sipariş bildirimi - "Sipariş aramaya başladık"
                 await callback_query.message.answer(
-                    "❌ Təəssüf ki, hal-hazırda bu xidmət növü üzrə usta tapılmadı. "
-                    "Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
+                    "🔍 *Sizin üçün usta axtarırıq...*\n\n"
+                    "Sifarişiniz yerləşdirilib və uyğun ustalar axtarılır.\n"
+                    "Bir usta tapıldığında dərhal sizə bildiriş edəcəyik.",
+                    parse_mode="Markdown",
+                    reply_markup=types.ReplyKeyboardRemove()
+                )
+                
+                # Gözləmə əlavə edirik - 10 saniyə
+                await asyncio.sleep(10)
+                
+                # Gözləmədən sonra "məşğul" mesajını göstəririk
+                await callback_query.message.answer(
+                    "🕐 Bu sahədə bütün ustalarımız hazırda məşğuldur\n "
+                    "🔥 Yüksək tələbat səbəbindən bu xidmət sahəsindəki bütün peşəkar ustalarımız hazırda digər sifarişlərlə məşğuldur.\n",
                     reply_markup=types.ReplyKeyboardRemove()
                 )
                 await state.finish()

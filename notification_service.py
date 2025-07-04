@@ -186,8 +186,8 @@ async def notify_customer_no_artisan(customer_telegram_id, order_id):
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         
         message_text = (
-            f"❌ *Təəssüf ki, sifariş üçün usta tapılmadı*\n\n"
-            f"Sifariş #{order_id} üçün yaxınlıqda uyğun usta tapılmadı.\n"
+            f"🕐 *Bu sahədə bütün ustalarımız hazırda məşğuldur*\n\n"
+            f"🔥 Yüksək tələbat səbəbindən bu xidmət sahəsindəki bütün peşəkar ustalarımız hazırda digər sifarişlərlə məşğuldur.\n"
             f"Zəhmət olmasa, bir az sonra yenidən cəhd edin."
         )
         
@@ -359,13 +359,18 @@ async def block_customer_after_timeout(order_id, customer_id, required_payment):
                 # Get customer telegram ID
                 customer = get_customer_by_id(customer_id)
                 if customer and customer.get('telegram_id'):
+                    # Create an inline keyboard with a "Pay Fine" button
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(InlineKeyboardButton("💰 Cəriməni ödə", callback_data="pay_customer_fine"))
+
                     await bot.send_message(
                         chat_id=customer['telegram_id'],
-                        text=f"⛔ *Hesabınız bloklandı*\n\n"
+                        text=f"⛔ <b>Hesabınız bloklandı</b>\n\n"
                              f"Səbəb: {block_reason}\n\n"
                              f"Bloku açmaq üçün {required_payment:.2f} AZN ödəniş etməlisiniz.\n"
-                             f"Ödəniş etmək üçün: /pay_customer_fine komandası ilə ətraflı məlumat ala bilərsiniz.",
-                        parse_mode="Markdown"
+                             f"Ödəniş etmək üçün aşağıdakı düyməni istifadə edin:",
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
                     )
                     logger.info(f"Customer {customer_id} blocked for invalid receipt on order {order_id}")
                 else:
@@ -604,8 +609,8 @@ async def notify_artisan_about_invalid_commission(order_id):
 async def block_artisan_after_timeout(order_id, artisan_id, required_payment):
     """Block artisan after timeout if payment not made"""
     try:
-        # Wait 18 hours
-        await asyncio.sleep(18 * 60 * 60)  # 18 hours
+        # Wait 24 hours
+        await asyncio.sleep(18 * 60 * 60)  # 24 hours
         
         # Check if artisan has resubmitted a receipt
         conn = get_connection()

@@ -170,8 +170,8 @@ async def check_order_acceptance(order_id, customer_id, timeout_seconds):
                 await bot.send_message(
                     chat_id=customer['telegram_id'],
                     text=f"ℹ️ *Sifariş ləğv edildi*\n\n"
-                         f"Təəssüf ki, yaxınlıqda uyğun usta tapılmadı.\n"
-                         f"Zəhmət olmasa, yeni bir sifariş verin və ya daha sonra yenidən cəhd edin.",
+                         f"*Təəssüf ki, yaxınlıqda bu sahədə bütün ustalarımız hazırda məşğuldur.*\n"
+                         f"Yüksək tələbat səbəbindən bu xidmət sahəsindəki bütün peşəkar ustalarımız hazırda digər sifarişlərlə məşğuldur. Zəhmət olmasa, yeni bir sifariş verin və ya daha sonra yenidən cəhd edin.",
                     parse_mode="Markdown"
                 )
                 logger.info(f"Customer notification sent about cancellation for order {order_id}")

@@ -9,3 +9,5 @@ python-dotenv==1.0.1     # load_dotenv in config.py
 
 # MySQL connector
 mysql-connector-python==8.3.0   # mysql.connector throughout db.py & db_setup.py
+
+cryptography
