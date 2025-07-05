@@ -2118,7 +2118,7 @@ def block_customer(customer_id, reason, required_payment, block_hours=24):
         
         # Calculate block duration
         if block_hours > 0:
-            block_timestamp = datetime.datetime.now() + datetime.timedelta(hours=block_hours)
+            block_timestamp = datetime.now() + timedelta(hours=block_hours)
             block_until = block_timestamp.strftime("%Y-%m-%d %H:%M:%S")
         else:
             block_until = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
