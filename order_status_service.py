@@ -194,6 +194,65 @@ async def check_order_acceptance(order_id, customer_id, timeout_seconds):
     except Exception as e:
         logger.error(f"Error in check_order_acceptance: {e}", exc_info=True)
 
+async def check_direct_order_acceptance(order_id, customer_id, artisan_id, timeout_seconds):
+    """Check if direct order (from specific artisan) is accepted within timeout"""
+    try:
+        if not order_id:
+            logger.error("check_direct_order_acceptance called with None order_id")
+            return
+            
+        logger.info(f"Waiting {timeout_seconds} seconds to check direct order {order_id} for artisan {artisan_id}")
+        
+        # Wait for the specified time
+        await asyncio.sleep(timeout_seconds)
+        
+        # Check the current order status
+        order = get_order_details(order_id)
+        
+        if not order:
+            logger.error(f"Direct order {order_id} not found in check_direct_order_acceptance")
+            return
+            
+        logger.info(f"Checking acceptance for direct order {order_id}, current status: {order['status']}")
+            
+        # If still in "searching" status, cancel the order
+        if order['status'] == "searching":
+            logger.info(f"Direct order {order_id} is still in 'searching' status, canceling")
+            
+            # Cancel the order
+            update_order_status(order_id, "cancelled")
+            
+            # Notify customer with specific message for direct orders
+            customer = get_customer_by_id(customer_id)
+            if customer and customer.get('telegram_id'):
+                # Send special message for direct order rejection/timeout
+                await bot.send_message(
+                    chat_id=customer['telegram_id'],
+                    text=f"ℹ️ *Sifariş statusu*\n\n"
+                         f"Təəssüf ki, hal-hazırda bu usta sizin sifarişinizi qəbul edə bilmir. "
+                         f"Xahiş olunur, bir az sonra yenidən cəhd edəsiniz.",
+                    parse_mode="Markdown"
+                )
+                logger.info(f"Customer notification sent about direct order cancellation for order {order_id}")
+                
+                # Show customer menu
+                fake_message = types.Message.to_object({
+                    'message_id': 0, 
+                    'date': 0, 
+                    'chat': {'id': customer['telegram_id'], 'type': 'private'}, 
+                    'from': {'id': customer['telegram_id']}, 
+                    'content_type': 'text', 
+                    'text': ''
+                })
+                await show_customer_menu(fake_message)
+            else:
+                logger.error(f"Customer {customer_id} not found or telegram_id missing")
+        else:
+            logger.info(f"Direct order {order_id} status is {order['status']}, no need to cancel")
+            
+    except Exception as e:
+        logger.error(f"Error in check_direct_order_acceptance: {e}", exc_info=True)
+
 async def notify_customer_about_arrival(order_id, status):
     """Müşteriye ustanın varış durumu hakkında bildirim gönderir"""
     try:

@@ -69,6 +69,11 @@ class AdminPaymentStates(StatesGroup):
 class PaymentReceiptState(StatesGroup):
     waiting_for_receipt = State()
 
+class AdvertisementStates(StatesGroup):
+    selecting_package = State()
+    waiting_for_receipt = State()
+    waiting_for_photos = State()
+
 async def show_command_guide(message: types.Message):
     """Display command guide information"""
     try:
@@ -112,6 +117,8 @@ async def show_command_guide(message: types.Message):
         )
 # Register artisan handlers
 def register_handlers(dp):
+    logger.info("Registering artisan handlers...")
+    
     # Handler for when user selects "Artisan" role
     @dp.message_handler(lambda message: message.text == "🛠 Usta/Təmizlikçi")
     async def handle_artisan(message: types.Message, state: FSMContext):
@@ -822,6 +829,7 @@ def register_handlers(dp):
                     
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
             keyboard.add(KeyboardButton("📋 Aktiv sifarişlər"))
+            keyboard.add(KeyboardButton("📺 Reklam ver"))
             keyboard.add(KeyboardButton("⭐ Rəylər"), KeyboardButton("📊 Statistika"))
             keyboard.add(KeyboardButton("💰 Qiymət ayarları"), KeyboardButton("⚙️ Profil ayarları"))
             keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
@@ -4801,19 +4809,80 @@ def register_handlers(dp):
     # Əmr bələdçisi funksiyasını əlavə et
     dp.register_message_handler(show_command_guide, lambda message: message.text == "ℹ️ Əmr bələdçisi")
 
-    @dp.message_handler(lambda message: True, content_types=types.ContentType.TEXT)
     async def handle_text_input(message: types.Message):
         """Metin girişlerini işler (fiyat girişi vb.)"""
         try:
             telegram_id = message.from_user.id
+            
+            # Debug log
+            logger.info(f"handle_text_input triggered for message: '{message.text}' from user: {telegram_id}")
+            
+            # Skip handling for specific button texts that have their own handlers
+            specific_button_texts = [
+                "📺 Reklam ver", "📋 Aktiv sifarişlər", "⭐ Rəylər", "📊 Statistika", 
+                "⚙️ Profil ayarları", "💰 Qiymət ayarları", "🛠 Usta/Təmizlikçi", 
+                "👤 Müştəriyəm", "ℹ️ Əmr bələdçisi", "👨‍💼 Admin", "🔄 Rol seçiminə qayıt",
+                "🔙🔙🔙 Geri", "✅ Yeni sifariş ver", "📜 Əvvəlki sifarişlərə bax",
+                "🌍 Yaxınlıqdakı ustaları göstər", "👤 Profilim", "🔍 Xidmətlər", 
+                "🏠 Əsas menyuya qayıt", "🔙 Geri", "❌ Sifarişi ləğv et"
+            ]
+            
+            if message.text in specific_button_texts:
+                logger.info(f"Skipping handle_text_input for specific button: '{message.text}'")
+                return  # Let specific handlers handle these
             
             # Get user context
             from db import get_user_context
             context = get_user_context(telegram_id)
             
             if not context:
-                # If no context, pass to other handlers
-                return
+                # For other texts without context, show appropriate menu
+                logger.info("No context found, showing appropriate menu")
+                
+                # Check if user is an artisan
+                artisan_id = get_artisan_by_telegram_id(telegram_id)
+                if artisan_id:
+                    # Check if artisan is blocked
+                    is_blocked, reason, amount = get_artisan_blocked_status(artisan_id)
+                    
+                    if is_blocked:
+                        await message.answer(
+                            f"⛔ Hesabınız bloklanıb. Xidmətdən istifadə etmək üçün bloku açın.\n"
+                            f"Səbəb: {reason}\n"
+                            f"Ödəniş məbləği: {amount} AZN\n"
+                            f"Ödəniş etmək üçün: /pay_fine"
+                        )
+                        return
+                    
+                    # Show artisan menu if not blocked
+                    logger.info(f"Showing artisan menu to user {telegram_id}")
+                    await show_artisan_menu(message)
+                    return
+                else:
+                    # Check if user is a customer
+                    customer_id = get_customer_by_telegram_id(telegram_id)
+                    if customer_id:
+                        # Check if customer is blocked
+                        is_blocked, reason, amount = get_customer_blocked_status(customer_id)
+                        
+                        if is_blocked:
+                            await message.answer(
+                                f"⛔ Hesabınız bloklanıb. Xidmətdən istifadə etmək üçün bloku açın.\n"
+                                f"Səbəb: {reason}\n"
+                                f"Ödəniş məbləği: {amount} AZN\n"
+                                f"Ödəniş etmək üçün: /pay_customer_fine"
+                            )
+                            return
+                        
+                        # Show customer menu if not blocked
+                        logger.info(f"Showing customer menu to user {telegram_id}")
+                        await show_customer_menu(message)
+                        return
+                    else:
+                        # Show role selection for unregistered users
+                        logger.info(f"Showing role selection to unregistered user {telegram_id}")
+                        await show_role_selection(message)
+                        return
             
             action = context.get('action')
             
@@ -4972,9 +5041,39 @@ def register_handlers(dp):
         """Catch all unhandled callback queries"""
         try:
             callback_data = callback_query.data
-            logger.info(f"Unhandled callback received: {callback_data}")
             
-            if callback_data.startswith('set_price_range_'):
+            # Handle advertisement callbacks
+            if callback_data.startswith('select_package_'):
+                logger.info(f"Redirecting to select_advertisement_package: {callback_data}")
+                # Redirect to the proper handler
+                await select_advertisement_package(callback_query, state)
+                return
+            elif callback_data.startswith('proceed_payment_'):
+                # Redirect to the proper handler
+                await proceed_payment(callback_query, state)
+                return
+            elif callback_data == "back_to_package_selection":
+                # Redirect to the proper handler
+                await back_to_package_selection(callback_query, state)
+                return
+            elif callback_data == "finish_photo_upload":
+                # Check if user is in correct state, if not redirect to specific handler
+                current_state = await state.get_state()
+                state_data = await state.get_data()
+                logger.info(f"finish_photo_upload callback - Current state: {current_state}, Expected: {AdvertisementStates.waiting_for_photos.state}")
+                logger.info(f"State data: {state_data}")
+                
+                if current_state == AdvertisementStates.waiting_for_photos.state:
+                    # Redirect to the proper handler with correct state
+                    logger.info("Redirecting to finish_photo_upload handler")
+                    await finish_photo_upload(callback_query, state)
+                else:
+                    # User is not in correct state
+                    logger.warning(f"User not in correct state. Current: {current_state}")
+                    await callback_query.answer("⚠️ Bu əməliyyat yalnızca foto yükləmə zamanı mövcuddur.", show_alert=True)
+                return
+            # Handle other callbacks
+            elif callback_data.startswith('set_price_range_'):
                 # Redirect to the proper handler
                 await set_price_range_for_subservice(callback_query, state)
                 return
@@ -4982,15 +5081,14 @@ def register_handlers(dp):
                 # Redirect to the proper handler
                 await finish_price_setup(callback_query, state)
                 return
-            elif callback_data == "back_to_menu":
+            elif callback_data in ["back_to_menu", "back_to_artisan_menu"]:
                 await state.finish()
                 await show_artisan_menu(callback_query.message)
                 await callback_query.answer()
                 return
-            elif callback_data == "setup_payment_info":
-                # Redirect to the proper handler
-                await setup_payment_info(callback_query, state)
-                return
+            
+            # Log only truly unhandled callbacks
+            logger.info(f"Unhandled callback received: {callback_data}")
             
             # For any other unhandled callbacks
             await callback_query.answer("Bu əməliyyat hazırda mövcud deyil.")
@@ -5008,5 +5106,414 @@ def register_handlers(dp):
         lambda c: c.data.startswith('reject_order_')
     )
 
+
+    # Handler for "Advertisement" button
+    @dp.message_handler(lambda message: message.text == "📺 Reklam ver")
+    async def start_advertisement(message: types.Message, state: FSMContext):
+        """Start advertisement package selection"""
+        try:
+            # Debug log
+            logger.info(f"📺 Reklam ver düyməsi basıldı - User ID: {message.from_user.id}")
+            
+            # Get artisan ID
+            telegram_id = message.from_user.id
+            artisan_id = get_artisan_by_telegram_id(telegram_id)
+            
+            logger.info(f"Artisan ID: {artisan_id}")
+            
+            if not artisan_id:
+                logger.warning(f"User {telegram_id} not registered as artisan")
+                await message.answer(
+                    "❌ Siz hələ usta kimi qeydiyyatdan keçməmisiniz."
+                )
+                return
+            
+            # Check if artisan is blocked
+            is_blocked, reason, amount = get_artisan_blocked_status(artisan_id)
+            logger.info(f"Artisan blocked status: {is_blocked}")
+            
+            if is_blocked:
+                logger.warning(f"Artisan {artisan_id} is blocked: {reason}")
+                await message.answer(
+                    f"⛔ Hesabınız bloklanıb. Reklam vermək üçün əvvəlcə bloku açın.\n"
+                    f"Səbəb: {reason}\n"
+                    f"Ödəniş məbləği: {amount} AZN\n"
+                    f"Ödəniş etmək üçün: /pay_fine"
+                )
+                return
+            
+            # Show advertisement packages
+            logger.info("Showing advertisement packages")
+            await show_advertisement_packages(message, state)
+                
+        except Exception as e:
+            logger.error(f"Error in start_advertisement: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+
+    async def show_advertisement_packages(message: types.Message, state: FSMContext):
+        """Show available advertisement packages"""
+        try:
+            # Set state
+            await AdvertisementStates.selecting_package.set()
+            
+            # Advertisement packages info
+            packages_text = (
+                "📺 *Reklam Paketləri*\n\n"
+                "Xidmətinizi daha çox müştəriyə çatdırmaq üçün reklam paketlərindən birini seçin:\n\n"
+                
+                "🥉 *BRONZE PAKET*\n"
+                "💰 Qiymət: 5 AZN\n"
+                "📸 Foto sayı: 1 ədəd\n"
+                "👥 Hədəf müştəri: 150 nəfər\n\n"
+                
+                "🥈 *SILVER PAKET*\n"
+                "💰 Qiymət: 12 AZN\n"
+                "📸 Foto sayı: 3 ədəd\n"
+                "👥 Hədəf müştəri: 400 nəfər\n\n"
+                
+                "🥇 *GOLD PAKET*\n"
+                "💰 Qiymət: 25 AZN\n"
+                "📸 Foto sayı: 6 ədəd\n"
+                "👥 Hədəf müştəri: 900 nəfər\n\n"
+                
+                "📋 *Reklam Prosesi:*\n"
+                "1️⃣ Paket seçin\n"
+                "2️⃣ Ödəniş edin\n"
+                "3️⃣ Əl işinizin foto(lar)ını göndərin\n"
+                "4️⃣ Admin təsdiqi\n"
+                "5️⃣ Reklamınız yayımlanır\n\n"
+                
+                "⚠️ *Qeyd:* Foto yüksək keyfiyyətli və həqiqi işinizi göstərən olmalıdır."
+            )
+            
+            # Create package selection keyboard
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(
+                InlineKeyboardButton("🥉 Bronze - 5 AZN", callback_data="select_package_bronze"),
+                InlineKeyboardButton("🥈 Silver - 12 AZN", callback_data="select_package_silver"),
+                InlineKeyboardButton("🥇 Gold - 25 AZN", callback_data="select_package_gold")
+            )
+            keyboard.add(
+                InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu")
+            )
+            
+            await message.answer(
+                packages_text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in show_advertisement_packages: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+
+    @dp.callback_query_handler(lambda c: c.data.startswith('select_package_'), state=AdvertisementStates.selecting_package)
+    async def select_advertisement_package(callback_query: types.CallbackQuery, state: FSMContext):
+        """Handle advertisement package selection"""
+        try:
+            package_type = callback_query.data.split('_')[-1]  # bronze, silver, gold
+            
+            # Package details
+            package_info = {
+                'bronze': {'name': 'Bronze', 'price': 5, 'photos': 1, 'users': 150},
+                'silver': {'name': 'Silver', 'price': 12, 'photos': 3, 'users': 400},
+                'gold': {'name': 'Gold', 'price': 25, 'photos': 6, 'users': 900}
+            }
+            
+            selected_package = package_info[package_type]
+            
+            # Save package selection to state
+            await state.update_data(
+                package_type=package_type,
+                package_name=selected_package['name'],
+                package_price=selected_package['price'],
+                package_photos=selected_package['photos'],
+                package_users=selected_package['users']
+            )
+            
+            # Show package confirmation and payment info
+            confirmation_text = (
+                f"📦 *Seçilmiş Paket: {selected_package['name']}*\n\n"
+                f"💰 Qiymət: {selected_package['price']} AZN\n"
+                f"📸 Foto sayı: {selected_package['photos']} ədəd\n"
+                f"👥 Hədəf müştəri: {selected_package['users']} nəfər\n\n"
+                f"💳 *Ödəniş Məlumatları:*\n"
+                f"Kart nömrəsi: `4098 5844 9700 2863`\n"
+                f"Kart sahibi: N A\n"
+                f"Məbləğ: {selected_package['price']} AZN\n\n"
+                f"⚠️ Ödənişdən sonra qəbzi foto şəklində göndərməyi unutmayın!"
+            )
+            
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(
+                InlineKeyboardButton("💳 Ödəniş et və indi reklam ver", callback_data=f"proceed_payment_{package_type}"),
+                InlineKeyboardButton("🔙 Paket seçiminə qayıt", callback_data="back_to_package_selection"),
+                InlineKeyboardButton("🏠 Ana menüyə qayıt", callback_data="back_to_artisan_menu")
+            )
+            
+            await callback_query.message.answer(
+                confirmation_text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in select_advertisement_package: {e}")
+            await callback_query.answer("❌ Xəta baş verdi.", show_alert=True)
+
+    # Handler for payment confirmation
+    @dp.callback_query_handler(lambda c: c.data.startswith('proceed_payment_'))
+    async def proceed_payment(callback_query: types.CallbackQuery, state: FSMContext):
+        """Handle payment confirmation and start receipt upload"""
+        try:
+            package_type = callback_query.data.split('_')[-1]
+            
+            # Get state data
+            state_data = await state.get_data()
+            
+            # Create advertisement request in database
+            artisan_id = get_artisan_by_telegram_id(callback_query.from_user.id)
+            payment_amount = state_data.get('package_price', 0)
+            
+            # Create advertisement request
+            advertisement_id = create_advertisement_request(artisan_id, package_type, payment_amount)
+            
+            if advertisement_id:
+                # Save advertisement ID to state
+                await state.update_data(advertisement_id=advertisement_id)
+                
+                # Set receipt waiting state
+                await AdvertisementStates.waiting_for_receipt.set()
+                
+                # Request receipt upload
+                await callback_query.message.answer(
+                    "📸 *Ödəniş Qəbzi Yükləyin*\n\n"
+                    "Ödənişi tamamladıqdan sonra bank qəbzini və ya köçürmə ekranının şəklini göndərin.\n\n"
+                    "⚠️ *Qeyd:* Qəbz aydın və oxunaqlı olmalıdır. Məbləğ və tarix görsənməlidir.\n\n"
+                    "📷 Qəbz fotoğrafını göndərin:",
+                    parse_mode="Markdown"
+                )
+                
+                # Send back button
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(
+                    InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu")
+                )
+                await callback_query.message.answer(
+                    "🔙 Geri çəkmək üçün:",
+                    reply_markup=keyboard
+                )
+                
+            else:
+                await callback_query.answer("❌ Xəta baş verdi. Yenidən cəhd edin.", show_alert=True)
+                
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in proceed_payment: {e}")
+            await callback_query.answer("❌ Xəta baş verdi.", show_alert=True)
+
+    # Handler for back to package selection
+    @dp.callback_query_handler(lambda c: c.data == "back_to_package_selection")
+    async def back_to_package_selection(callback_query: types.CallbackQuery, state: FSMContext):
+        """Go back to package selection"""
+        try:
+            await show_advertisement_packages(callback_query.message, state)
+            await callback_query.answer()
+        except Exception as e:
+            logger.error(f"Error in back_to_package_selection: {e}")
+            await callback_query.answer()
+
+    # Handler for receipt photo upload
+    @dp.message_handler(content_types=types.ContentType.PHOTO, state=AdvertisementStates.waiting_for_receipt)
+    async def handle_advertisement_receipt(message: types.Message, state: FSMContext):
+        """Handle advertisement receipt photo upload"""
+        try:
+            state_data = await state.get_data()
+            advertisement_id = state_data.get('advertisement_id')
+            
+            if not advertisement_id:
+                await message.answer("❌ Xəta baş verdi. Yenidən başlayın.")
+                await state.finish()
+                return
+            
+            # Save receipt photo to database
+            receipt_photo_id = message.photo[-1].file_id
+            
+            # Update advertisement with receipt photo
+            update_advertisement_receipt(advertisement_id, receipt_photo_id)
+            
+            # Clear state
+            await state.finish()
+            
+            # Confirm receipt received
+            await message.answer(
+                "✅ *Qəbz Qəbul Edildi*\n\n"
+                "Ödəniş qəbziniz uğurla qəbul edildi və admin tərəfindən yoxlanılacaq.\n\n"
+                "📋 *Növbəti Addım:*\n"
+                "Qəbziniz təsdiqlənəndən sonra sizə bildiriş göndəriləcək və əl işinizin fotolarını yükləyə biləcəksiniz.\n\n"
+                "⏳ *Təxmini Vaxt:* 1-24 saat\n\n"
+                "📧 Təsdiq və ya rədd bildirişi Telegram vasitəsilə göndəriləcək.",
+                parse_mode="Markdown"
+            )
+            
+            # Send back to menu button
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton("🏠 Ana menüyə qayıt", callback_data="back_to_artisan_menu")
+            )
+            await message.answer(
+                "🔙 Ana menüyə qayıtmaq üçün:",
+                reply_markup=keyboard
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in handle_advertisement_receipt: {e}")
+            await message.answer(
+                "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa yenidən cəhd edin."
+            )
+
+    # Handler for photo upload after receipt approval
+    @dp.message_handler(content_types=types.ContentType.PHOTO, state=AdvertisementStates.waiting_for_photos)
+    async def handle_advertisement_photos(message: types.Message, state: FSMContext):
+        """Handle advertisement work photos upload"""
+        try:
+            state_data = await state.get_data()
+            advertisement_id = state_data.get('advertisement_id')
+            max_photos = state_data.get('max_photos', 1)
+            uploaded_photos = state_data.get('uploaded_photos', [])
+            
+            if not advertisement_id:
+                await message.answer("❌ Xəta baş verdi. Yenidən başlayın.")
+                await state.finish()
+                return
+            
+            # Check if we already have enough photos BEFORE adding new one
+            if len(uploaded_photos) >= max_photos:
+                await message.answer(
+                    f"⚠️ *Foto Limiti Aşıldı*\n\n"
+                    f"Siz artıq icazə verilən {max_photos} ədəd foto göndərmisiniz.\n\n"
+                    f"✅ Qəbul edilmiş foto sayı: {len(uploaded_photos)}\n"
+                    f"❌ Bu foto *qəbul edilmədi* və saxlanılmadı.\n\n"
+                    f"📋 Yalnız ilk {max_photos} ədəd fotolarınız admin tərəfindən yoxlanılacaq.\n\n"
+                    f"💡 Əlavə foto göndərə bilmək üçün digər paketlərimizi seçə bilərsiniz.",
+                    parse_mode="Markdown"
+                )
+                return
+            
+            # Add new photo to the list
+            photo_id = message.photo[-1].file_id
+            uploaded_photos.append(photo_id)
+            
+            # Update state with new photos
+            await state.update_data(uploaded_photos=uploaded_photos)
+            
+            remaining_photos = max_photos - len(uploaded_photos)
+            
+            if remaining_photos > 0:
+                # Still need more photos
+                await message.answer(
+                    f"✅ *Foto Uğurla Qəbul Edildi*\n\n"
+                    f"📊 {len(uploaded_photos)}/{max_photos} foto yükləndi\n"
+                    f"📸 Qalan foto sayı: {remaining_photos}\n\n"
+                    f"📷 Növbəti fotonu göndərin və ya yükləməni bitirin:",
+                    parse_mode="Markdown"
+                )
+                
+                # Show finish button if at least 1 photo uploaded
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(
+                    InlineKeyboardButton("✅ Foto yükləməni bitir", callback_data="finish_photo_upload"),
+                    InlineKeyboardButton("🔙 Geri", callback_data="back_to_artisan_menu")
+                )
+                await message.answer(
+                    "Seçiminizi edin:",
+                    reply_markup=keyboard
+                )
+            else:
+                # Exactly enough photos uploaded - automatically finish
+                await message.answer(
+                    f"✅ *Bütün Fotolar Yükləndi*\n\n"
+                    f"Təbriklər! {len(uploaded_photos)} ədəd foto uğurla yükləndi.\n\n"
+                    f"📋 Fotolarınız admin tərəfindən yoxlanılacaq.",
+                    parse_mode="Markdown"
+                )
+                await finish_photo_upload_process(message, state)
+                
+        except Exception as e:
+            logger.error(f"Error in handle_advertisement_photos: {e}")
+            await message.answer(
+                "❌ Foto yüklənərkən xəta baş verdi. Zəhmət olmasa yenidən cəhd edin."
+            )
+
+    # Handler for finishing photo upload
+    @dp.callback_query_handler(lambda c: c.data == "finish_photo_upload", state=AdvertisementStates.waiting_for_photos)
+    async def finish_photo_upload(callback_query: types.CallbackQuery, state: FSMContext):
+        """Finish photo upload process"""
+        try:
+            await finish_photo_upload_process(callback_query.message, state)
+            await callback_query.answer()
+        except Exception as e:
+            logger.error(f"Error in finish_photo_upload: {e}")
+            await callback_query.answer("❌ Xəta baş verdi.", show_alert=True)
+
+    async def finish_photo_upload_process(message: types.Message, state: FSMContext):
+        """Complete photo upload process"""
+        try:
+            state_data = await state.get_data()
+            advertisement_id = state_data.get('advertisement_id')
+            uploaded_photos = state_data.get('uploaded_photos', [])
+            
+            if not advertisement_id or not uploaded_photos:
+                await message.answer("❌ Xəta baş verdi. Yenidən başlayın.")
+                await state.finish()
+                return
+            
+            # Save photos to database
+            update_advertisement_photos(advertisement_id, uploaded_photos)
+            
+            # Clear state
+            await state.finish()
+            
+            # Confirm photos received
+            await message.answer(
+                f"✅ *Foto Qəbul Edildi*\n\n"
+                f"Yüklənmiş foto sayı: {len(uploaded_photos)}\n\n"
+                f"📋 *Növbəti Addım:*\n"
+                f"Fotolarınız admin tərəfindən yoxlanılacaq və təsdiqlənəndən sonra reklamınız müştərilərə göndəriləcək.\n\n"
+                f"⏳ *Təxmini Vaxt:* 1-24 saat\n\n"
+                f"📧 Təsdiq və ya rədd bildirişi Telegram vasitəsilə göndəriləcək.",
+                parse_mode="Markdown"
+            )
+            
+            # Send back to menu button
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton("🏠 Ana menüyə qayıt", callback_data="back_to_artisan_menu")
+            )
+            await message.answer(
+                "🔙 Ana menüyə qayıtmaq üçün:",
+                reply_markup=keyboard
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in finish_photo_upload_process: {e}")
+            await message.answer(
+                "❌ Fotolar saxlanılarkən xəta baş verdi. Zəhmət olmasa yenidən cəhd edin."
+            )
+
+    # Register general text handler LAST to avoid conflicts
+    dp.register_message_handler(handle_text_input, lambda message: True, content_types=types.ContentType.TEXT)
+    
+    logger.info("Artisan handlers registered successfully!")
+
 def hash_telegram_id(telegram_id):
     return hashlib.sha256(str(telegram_id).encode()).hexdigest()
+
+    

@@ -7,7 +7,7 @@ This bot allows customers to find and book artisans for various services,
 and helps artisans manage their service offerings and customer orders.
 """
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 import logging
@@ -224,6 +224,8 @@ async def admin_panel(message: types.Message):
     keyboard.add(
         InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+        InlineKeyboardButton("📺 Reklam ödənişlərinin qəbzləri", callback_data="admin_advertisement_receipts"),
+        InlineKeyboardButton("📸 Reklam fotolarını yoxla", callback_data="admin_advertisement_photos"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
         InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
         InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
@@ -258,6 +260,8 @@ async def admin_command(message: types.Message):
     keyboard.add(
         InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
         InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+        InlineKeyboardButton("📺 Reklam ödənişlərinin qəbzləri", callback_data="admin_advertisement_receipts"),
+        InlineKeyboardButton("📸 Reklam fotolarını yoxla", callback_data="admin_advertisement_photos"),
         InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
         InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
         InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
@@ -287,6 +291,10 @@ async def admin_menu_handlers(callback_query: types.CallbackQuery):
             await show_admin_orders(callback_query.message)
         elif menu_option == "admin_receipts":
             await show_admin_receipts(callback_query.message)
+        elif menu_option == "admin_advertisement_receipts":
+            await show_admin_advertisement_receipts(callback_query.message)
+        elif menu_option == "admin_advertisement_photos":
+            await show_admin_advertisement_photos(callback_query.message)
         elif menu_option == "admin_users":
             await show_admin_users(callback_query.message)
         elif menu_option == "admin_stats":
@@ -2401,6 +2409,8 @@ async def back_to_admin_menu(callback_query: types.CallbackQuery):
         keyboard.add(
             InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
             InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+            InlineKeyboardButton("📺 Reklam ödənişlərinin qəbzləri", callback_data="admin_advertisement_receipts"),
+            InlineKeyboardButton("📸 Reklam fotolarını yoxla", callback_data="admin_advertisement_photos"),
             InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
             InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
             InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
@@ -3177,6 +3187,7 @@ async def process_artisan_bulk_message(message: types.Message, state: FSMContext
         keyboard.add(
             InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
             InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+            InlineKeyboardButton("📺 Reklam ödənişlərinin qəbzləri", callback_data="admin_advertisement_receipts"),
             InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
             InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
             InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
@@ -3361,6 +3372,7 @@ async def process_customer_bulk_message(message: types.Message, state: FSMContex
         keyboard.add(
             InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
             InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+            InlineKeyboardButton("📺 Reklam ödənişlərinin qəbzləri", callback_data="admin_advertisement_receipts"),
             InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
             InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
             InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
@@ -3490,6 +3502,692 @@ async def show_admin_orders(message):
     except Exception as e:
         logger.error(f"Error in show_admin_orders: {e}")
         await message.answer("❌ Sifarişlər yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+async def show_admin_advertisement_receipts(message):
+    """Show pending advertisement receipts for admin review"""
+    try:
+        from db import get_pending_advertisement_receipts, get_admin_artisan_by_id
+        from crypto_service import decrypt_data
+        
+        pending_receipts = get_pending_advertisement_receipts()
+        
+        if not pending_receipts:
+            await message.answer(
+                "📺 <b>Reklam Ödənişləri</b>\n\n"
+                "📭 Hal-hazırda yoxlama üçün gözləyən reklam ödəniş qəbzi yoxdur.",
+                parse_mode="HTML"
+            )
+            return
+        
+        await message.answer(
+            f"📺 <b>Reklam Ödənişləri - Yoxlama Gözləyir</b>\n\n"
+            f"🔍 Yoxlama üçün gözləyən {len(pending_receipts)} qəbz tapıldı:",
+            parse_mode="HTML"
+        )
+        
+        for receipt in pending_receipts:
+            # Get properly decoded artisan name for admin view
+            artisan_data = get_admin_artisan_by_id(receipt['artisan_id']) if receipt.get('artisan_id') else None
+            artisan_name = artisan_data['name'] if artisan_data else 'N/A'
+            # Package info
+            package_info = {
+                'bronze': {'name': 'Bronze', 'price': '5 AZN', 'photos': 1, 'users': 150},
+                'silver': {'name': 'Silver', 'price': '12 AZN', 'photos': 3, 'users': 400},
+                'gold': {'name': 'Gold', 'price': '25 AZN', 'photos': 6, 'users': 900}
+            }
+            
+            package = package_info.get(receipt['package_type'], {'name': receipt['package_type'], 'price': receipt['payment_amount'], 'photos': '?', 'users': '?'})
+            
+            # Format creation date
+            created_at = receipt['created_at']
+            if isinstance(created_at, str):
+                formatted_date = created_at
+            else:
+                formatted_date = created_at.strftime("%d.%m.%Y %H:%M")
+            
+            receipt_text = (
+                f"📋 <b>Reklam İsteği #{receipt['id']}</b>\n\n"
+                f"👷‍♂️ <b>Usta:</b> {artisan_name}\n"
+                f"🛠 <b>Xidmət:</b> {receipt['artisan_service']}\n"
+                f"📦 <b>Paket:</b> {package['name']} ({package['price']})\n"
+                f"📸 <b>Foto sayı:</b> {package['photos']}\n"
+                f"👥 <b>Hədəf müştəri:</b> {package['users']}\n"
+                f"📅 <b>Tarix:</b> {formatted_date}\n"
+                f"💰 <b>Ödəniş məbləği:</b> {receipt['payment_amount']} AZN\n\n"
+                f"🧾 <b>Qəbz Statusu:</b> Yoxlama gözləyir"
+            )
+            
+            # Create action buttons
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("✅ Qəbz Təsdiq Et", callback_data=f"approve_ad_receipt_{receipt['id']}"),
+                InlineKeyboardButton("❌ Qəbz Rədd Et", callback_data=f"reject_ad_receipt_{receipt['id']}")
+            )
+            keyboard.add(
+                InlineKeyboardButton("🔙 Admin Panelə Qayıt", callback_data="back_to_admin")
+            )
+            
+            # Send receipt photo
+            if receipt.get('receipt_photo_id'):
+                await message.answer_photo(
+                    photo=receipt['receipt_photo_id'],
+                    caption=receipt_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer(
+                    receipt_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                
+    except Exception as e:
+        logger.error(f"Error in show_admin_advertisement_receipts: {e}")
+        await message.answer("❌ Reklam qəbzlərini yükləyərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+async def show_admin_advertisement_photos(message):
+    """Show pending advertisement photos for admin review"""
+    try:
+        from db import get_pending_advertisement_photos, get_admin_artisan_by_id
+        from crypto_service import decrypt_data
+        import json
+        
+        pending_photos = get_pending_advertisement_photos()
+        
+        if not pending_photos:
+            await message.answer(
+                "📸 <b>Reklam Fotoları</b>\n\n"
+                "📭 Hal-hazırda yoxlama üçün gözləyən reklam fotoğrafı yoxdur.",
+                parse_mode="HTML"
+            )
+            return
+        
+        await message.answer(
+            f"📸 <b>Reklam Fotoları - Yoxlama Gözləyir</b>\n\n"
+            f"🔍 Yoxlama üçün gözləyən {len(pending_photos)} reklam tapıldı:",
+            parse_mode="HTML"
+        )
+        
+        for advertisement in pending_photos:
+            # Get properly decoded artisan name for admin view
+            artisan_data = get_admin_artisan_by_id(advertisement['artisan_id']) if advertisement.get('artisan_id') else None
+            artisan_name = artisan_data['name'] if artisan_data else 'N/A'
+            # Package info
+            package_info = {
+                'bronze': {'name': 'Bronze', 'price': '5 AZN', 'photos': 1, 'users': 150},
+                'silver': {'name': 'Silver', 'price': '12 AZN', 'photos': 3, 'users': 400},
+                'gold': {'name': 'Gold', 'price': '25 AZN', 'photos': 6, 'users': 900}
+            }
+            
+            package = package_info.get(advertisement['package_type'], {'name': advertisement['package_type'], 'price': advertisement['payment_amount'], 'photos': '?', 'users': '?'})
+            
+            # Parse photos from JSON
+            photos = []
+            if advertisement.get('advertisement_photos'):
+                try:
+                    photos = json.loads(advertisement['advertisement_photos'])
+                except json.JSONDecodeError:
+                    photos = []
+            
+            # Format creation date
+            created_at = advertisement['created_at']
+            if isinstance(created_at, str):
+                formatted_date = created_at
+            else:
+                formatted_date = created_at.strftime("%d.%m.%Y %H:%M")
+            
+            photo_text = (
+                f"📸 <b>Reklam Fotoları #{advertisement['id']}</b>\n\n"
+                f"👷‍♂️ <b>Usta:</b> {artisan_name}\n"
+                f"🛠 <b>Xidmət:</b> {advertisement['artisan_service']}\n"
+                f"📦 <b>Paket:</b> {package['name']} ({package['price']})\n"
+                f"📸 <b>Yüklənən foto sayı:</b> {len(photos)}\n"
+                f"👥 <b>Hədəf müştəri:</b> {package['users']}\n"
+                f"📅 <b>Tarix:</b> {formatted_date}\n\n"
+                f"🔍 <b>Foto Statusu:</b> Yoxlama gözləyir"
+            )
+            
+            # Create action buttons
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("✅ Fotoları Təsdiq Et", callback_data=f"approve_ad_photos_{advertisement['id']}"),
+                InlineKeyboardButton("❌ Fotoları Rədd Et", callback_data=f"reject_ad_photos_{advertisement['id']}")
+            )
+            keyboard.add(
+                InlineKeyboardButton("🔙 Admin Panelə Qayıt", callback_data="back_to_admin")
+            )
+            
+            # Send photos as media group
+            if photos and len(photos) > 0:
+                # Send caption first
+                await message.answer(
+                    photo_text,
+                    parse_mode="HTML"
+                )
+                
+                # Send photos as media group
+                if len(photos) == 1:
+                    # Single photo
+                    await message.answer_photo(
+                        photo=photos[0],
+                        caption=f"📸 Əl işi fotosu",
+                        reply_markup=keyboard
+                    )
+                else:
+                    # Multiple photos as media group
+                    media_group = []
+                    for i, photo_id in enumerate(photos):
+                        if i == 0:
+                            # First photo with caption
+                            media_group.append(InputMediaPhoto(media=photo_id, caption=f"📸 {len(photos)} ədəd əl işi fotosu"))
+                        else:
+                            media_group.append(InputMediaPhoto(media=photo_id))
+                    
+                    await message.answer_media_group(media_group)
+                    
+                    # Send buttons separately
+                    await message.answer(
+                        "⬆️ Yuxarıdakı fotoları qiymətləndirin:",
+                        reply_markup=keyboard
+                    )
+            else:
+                # No photos available
+                await message.answer(
+                    photo_text + "\n\n❌ Foto tapılmadı!",
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                
+    except Exception as e:
+        logger.error(f"Error in show_admin_advertisement_photos: {e}")
+        await message.answer("❌ Reklam fotolarını yükləyərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+@dp.callback_query_handler(lambda c: c.data.startswith(('approve_ad_receipt_', 'reject_ad_receipt_')))
+async def handle_advertisement_receipt_action(callback_query: types.CallbackQuery):
+    """Handle advertisement receipt approval/rejection"""
+    try:
+        if not is_admin(callback_query.from_user.id):
+            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
+            return
+        
+        action = callback_query.data
+        advertisement_id = int(action.split('_')[-1])
+        
+        from db import get_advertisement_by_id, update_advertisement_status, clear_advertisement_receipt
+        from crypto_service import decrypt_data
+        
+        # Get advertisement details
+        advertisement = get_advertisement_by_id(advertisement_id)
+        if not advertisement:
+            await callback_query.answer("❌ Reklam tapılmadı.", show_alert=True)
+            return
+        
+        # Decrypt artisan telegram_id
+        artisan_telegram_id = decrypt_data(advertisement['artisan_telegram_id'])
+        
+        if action.startswith('approve_ad_receipt_'):
+            # Approve receipt
+            success = update_advertisement_status(advertisement_id, 'receipt_status', 'accepted')
+            
+            if success:
+                await callback_query.answer("✅ Qəbz təsdiqləndi!", show_alert=True)
+                
+                # Notify artisan about approval and request photos
+                package_info = {
+                    'bronze': {'photos': 1},
+                    'silver': {'photos': 3},
+                    'gold': {'photos': 6}
+                }
+                
+                photo_count = package_info.get(advertisement['package_type'], {'photos': 1})['photos']
+                
+                try:
+                    # Set artisan state to waiting_for_photos
+                    await set_artisan_photo_upload_state(int(artisan_telegram_id), advertisement_id, photo_count)
+                    
+                    await bot.send_message(
+                        chat_id=int(artisan_telegram_id),
+                        text=f"✅ *Təbriklər!*\n\n"
+                             f"Reklam paketiniz üçün ödənişiniz təsdiqləndi.\n\n"
+                             f"📸 İndi zəhmət olmasa bizə *{photo_count} ədəd* öz əl işinizi əks etdirən şəkil göndərin.\n\n"
+                             f"⚠️ Şəkillər yüksək keyfiyyətli və sizin həqiqi işinizi göstərən olmalıdır.\n\n"
+                             f"📷 Fotoları bir-bir göndərin:",
+                        parse_mode="Markdown"
+                    )
+                    
+                    # Show photos for approval
+                    await show_advertisement_photos_for_approval(callback_query.message, advertisement_id)
+                    
+                except Exception as e:
+                    logger.error(f"Error notifying artisan about receipt approval: {e}")
+                    
+            else:
+                await callback_query.answer("❌ Qəbz təsdiqləməkdə xəta baş verdi.", show_alert=True)
+                
+        elif action.startswith('reject_ad_receipt_'):
+            # Reject receipt
+            success = update_advertisement_status(advertisement_id, 'receipt_status', 'rejected')
+            clear_receipt_success = clear_advertisement_receipt(advertisement_id)
+            
+            if success:
+                await callback_query.answer("❌ Qəbz rədd edildi!", show_alert=True)
+                
+                # Notify artisan about rejection and set state for new receipt upload
+                try:
+                    # Set artisan state to waiting for new receipt
+                    await set_artisan_receipt_upload_state(int(artisan_telegram_id), advertisement_id)
+                    
+                    await bot.send_message(
+                        chat_id=int(artisan_telegram_id),
+                        text="❌ *Ödəniş Qəbzi Rədd Edildi*\n\n"
+                             "Təqdim etdiyiniz ödəniş qəbzi təsdiqlənmədi.\n\n"
+                             "🔄 Zəhmət olmasa düzgün və aydın qəbz göndərin.\n\n"
+                             "💡 Qəbzdə ödəniş məbləği və tarix aydın görünməlidir.\n\n"
+                             "📷 Yeni qəbzin fotosunu göndərin:",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"Error notifying artisan about receipt rejection: {e}")
+                    
+            else:
+                await callback_query.answer("❌ Qəbzi rədd etməkdə xəta baş verdi.", show_alert=True)
+        
+        # Refresh the receipts list
+        await show_admin_advertisement_receipts(callback_query.message)
+        
+    except Exception as e:
+        logger.error(f"Error in handle_advertisement_receipt_action: {e}")
+        await callback_query.answer("❌ Xəta baş verdi.", show_alert=True)
+
+async def show_advertisement_photos_for_approval(message, advertisement_id):
+    """Show advertisement photos for admin approval if they exist"""
+    try:
+        from db import get_advertisement_by_id, get_admin_artisan_by_id
+        import json
+        
+        advertisement = get_advertisement_by_id(advertisement_id)
+        if not advertisement:
+            return
+        
+        # Check if photos exist and are pending
+        if advertisement.get('advertisement_photos') and advertisement.get('photos_status') == 'pending':
+            photos = json.loads(advertisement['advertisement_photos'])
+            
+            if photos:
+                # Get properly decoded artisan name for admin view
+                artisan_data = get_admin_artisan_by_id(advertisement['artisan_id']) if advertisement.get('artisan_id') else None
+                artisan_name = artisan_data['name'] if artisan_data else 'N/A'
+                
+                await message.answer(
+                    f"📸 <b>Reklam Fotoğrafları - Yoxlama Gözləyir</b>\n\n"
+                    f"👷‍♂️ <b>Usta:</b> {artisan_name}\n"
+                    f"📦 <b>Paket:</b> {advertisement['package_type'].title()}\n"
+                    f"📸 <b>Foto sayı:</b> {len(photos)}\n\n"
+                    f"Aşağıdakı fotoğrafları yoxlayın:",
+                    parse_mode="HTML"
+                )
+                
+                # Send each photo
+                for i, photo_id in enumerate(photos, 1):
+                    await message.answer_photo(
+                        photo=photo_id,
+                        caption=f"📸 Foto {i}/{len(photos)}"
+                    )
+                
+                # Add approval buttons
+                keyboard = InlineKeyboardMarkup(row_width=2)
+                keyboard.add(
+                    InlineKeyboardButton("✅ Reklam Təsdiq Et", callback_data=f"approve_ad_photos_{advertisement_id}"),
+                    InlineKeyboardButton("❌ Foto Rədd Et", callback_data=f"reject_ad_photos_{advertisement_id}")
+                )
+                keyboard.add(
+                    InlineKeyboardButton("🔙 Admin Panelə Qayıt", callback_data="back_to_admin")
+                )
+                
+                await message.answer(
+                    "🔍 <b>Fotoğrafları dəyərləndirin:</b>\n\n"
+                    "✅ <b>Təsdiq Et:</b> Reklamı yayımla\n"
+                    "❌ <b>Rədd Et:</b> Yeni foto istə",
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                
+    except Exception as e:
+        logger.error(f"Error in show_advertisement_photos_for_approval: {e}")
+
+@dp.callback_query_handler(lambda c: c.data.startswith(('approve_ad_photos_', 'reject_ad_photos_')))
+async def handle_advertisement_photos_action(callback_query: types.CallbackQuery):
+    """Handle advertisement photos approval/rejection"""
+    try:
+        if not is_admin(callback_query.from_user.id):
+            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
+            return
+        
+        action = callback_query.data
+        advertisement_id = int(action.split('_')[-1])
+        
+        from db import (get_advertisement_by_id, update_advertisement_status, 
+                       clear_advertisement_photos, get_artisan_subservices, 
+                       get_random_customers, get_total_customers_count)
+        from crypto_service import decrypt_data
+        import json
+        
+        # Get advertisement details
+        advertisement = get_advertisement_by_id(advertisement_id)
+        if not advertisement:
+            await callback_query.answer("❌ Reklam tapılmadı.", show_alert=True)
+            return
+        
+        # Decrypt artisan telegram_id
+        artisan_telegram_id = decrypt_data(advertisement['artisan_telegram_id'])
+        
+        if action.startswith('approve_ad_photos_'):
+            # Approve photos and broadcast advertisement
+            success = update_advertisement_status(advertisement_id, 'photos_status', 'accepted')
+            success = success and update_advertisement_status(advertisement_id, 'advertisement_status', 'accepted')
+            
+            if success:
+                await callback_query.answer("✅ Reklam təsdiqləndi və yayımlanır!", show_alert=True)
+                
+                # Notify artisan about final approval
+                try:
+                    await bot.send_message(
+                        chat_id=int(artisan_telegram_id),
+                        text="🎉 *Mükəmməl!*\n\n"
+                             "Reklamınız uğurla təsdiqləndi və müştərilərə göndərilir.\n\n"
+                             "📢 Reklamınız tezliklə hədəf müştərilərə çatacaq!\n\n"
+                             "✨ Yaxşı işlər diləyirik!",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"Error notifying artisan about final approval: {e}")
+                
+                # Broadcast advertisement to customers
+                await broadcast_advertisement(advertisement_id)
+                
+            else:
+                await callback_query.answer("❌ Reklam təsdiqləməkdə xəta baş verdi.", show_alert=True)
+                
+        elif action.startswith('reject_ad_photos_'):
+            # Reject photos
+            success = update_advertisement_status(advertisement_id, 'photos_status', 'rejected')
+            success = success and update_advertisement_status(advertisement_id, 'advertisement_status', 'rejected')
+            clear_photos_success = clear_advertisement_photos(advertisement_id)
+            
+            if success:
+                await callback_query.answer("❌ Fotoğraflar rədd edildi!", show_alert=True)
+                
+                # Get package info for photo count
+                package_info = {
+                    'bronze': {'photos': 1},
+                    'silver': {'photos': 3},
+                    'gold': {'photos': 6}
+                }
+                
+                photo_count = package_info.get(advertisement['package_type'], {'photos': 1})['photos']
+                
+                # Notify artisan about photo rejection
+                try:
+                    # Set artisan state back to waiting_for_photos
+                    await set_artisan_photo_upload_state(int(artisan_telegram_id), advertisement_id, photo_count)
+                    
+                    await bot.send_message(
+                        chat_id=int(artisan_telegram_id),
+                        text=f"❌ *Fotoğraflar Rədd Edildi*\n\n"
+                             f"Təqdim etdiyiniz fotoğraflar keyfiyyət standartlarımıza uyğun deyil.\n\n"
+                             f"🔄 Zəhmət olmasa *{photo_count} ədəd* yeni, keyfiyyətli fotoğraf göndərin.\n\n"
+                             f"📸 *Fotoğraf tələbləri:*\n"
+                             f"• Yüksək keyfiyyətli və aydın\n"
+                             f"• Sizin həqiqi işinizi göstərən\n"
+                             f"• Peşəkar görünümlü\n\n"
+                             f"📷 Fotoları bir-bir göndərin:",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"Error notifying artisan about photo rejection: {e}")
+                    
+            else:
+                await callback_query.answer("❌ Fotoğrafları rədd etməkdə xəta baş verdi.", show_alert=True)
+        
+        # Return to admin panel
+        # Create admin menu
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(
+            InlineKeyboardButton("📋 Sifarişləri İdarə Et", callback_data="admin_orders"),
+            InlineKeyboardButton("🧾 Ödəniş Qəbzlərini Yoxla", callback_data="admin_receipts"),
+            InlineKeyboardButton("📺 Reklam ödənişlərinin qəbzləri", callback_data="admin_advertisement_receipts"),
+            InlineKeyboardButton("📸 Reklam fotolarını yoxla", callback_data="admin_advertisement_photos"),
+            InlineKeyboardButton("👤 İstifadəçiləri İdarə Et", callback_data="admin_users"),
+            InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+            InlineKeyboardButton("🗑️ İstifadəçi Sil", callback_data="admin_delete_user"),
+            InlineKeyboardButton("📨 Ustalara Toplu Mesaj Göndər", callback_data="send_bulk_message_to_artisans"),
+            InlineKeyboardButton("📨 Müştərilərə Toplu Mesaj Göndər", callback_data="send_bulk_message_to_customers")
+        )
+        
+        await callback_query.message.answer(
+            "👨‍💼 *Admin İdarəetmə Paneli*\n\n"
+            "Zəhmət olmasa, aşağıdakı bölmələrdən birini seçin:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in handle_advertisement_photos_action: {e}")
+        await callback_query.answer("❌ Xəta baş verdi.", show_alert=True)
+
+async def broadcast_advertisement(advertisement_id):
+    """Broadcast approved advertisement to target customers"""
+    try:
+        from db import (get_advertisement_by_id, get_artisan_subservices, 
+                       get_random_customers, get_total_customers_count)
+        from crypto_service import decrypt_data
+        import json
+        
+        # Get advertisement details
+        advertisement = get_advertisement_by_id(advertisement_id)
+        if not advertisement:
+            logger.error(f"Advertisement {advertisement_id} not found for broadcasting")
+            return
+        
+        # Package info
+        package_info = {
+            'bronze': {'users': 150},
+            'silver': {'users': 400},
+            'gold': {'users': 900}
+        }
+        
+        target_users = package_info.get(advertisement['package_type'], {'users': 150})['users']
+        
+        # Get total customers count
+        total_customers = get_total_customers_count()
+        
+        # Get customers to send to
+        if total_customers <= target_users:
+            # Send to all customers
+            from db import execute_query
+            customers_query = """
+                SELECT telegram_id, name FROM customers 
+                WHERE active = 1 AND telegram_id IS NOT NULL
+            """
+            customers_encrypted = execute_query(customers_query, fetchall=True, dict_cursor=True)
+        else:
+            # Send to random customers
+            customers_encrypted = get_random_customers(target_users)
+        
+        if not customers_encrypted:
+            logger.warning(f"No customers found for advertisement {advertisement_id}")
+            return
+        
+        # Get artisan subservices for advertisement text
+        subservices = get_artisan_subservices(advertisement['artisan_id'])
+        subservice_names = [sub['subservice_name'] for sub in subservices[:2]]  # Take first 2
+        
+        # Get artisan name with proper decryption
+        from db import get_admin_artisan_by_id
+        artisan_data = get_admin_artisan_by_id(advertisement['artisan_id'])
+        artisan_name = artisan_data.get('name', 'Usta') if artisan_data else 'Usta'
+        
+        # Create advertisement text
+        service_templates = get_advertisement_templates()
+        service_name = advertisement['artisan_service']
+        template = service_templates.get(service_name, service_templates['default'])
+        
+        # Replace placeholders
+        ad_text = template.format(
+            service=service_name,
+            artisan_name=artisan_name,
+            subservice1=subservice_names[0] if len(subservice_names) > 0 else "",
+            subservice2=subservice_names[1] if len(subservice_names) > 1 else ""
+        )
+        
+        # Get advertisement photos
+        photos = []
+        if advertisement.get('advertisement_photos'):
+            photos = json.loads(advertisement['advertisement_photos'])
+        
+        # Send advertisement to customers
+        success_count = 0
+        failed_count = 0
+        
+        for customer_enc in customers_encrypted:
+            try:
+                decrypted_telegram_id = decrypt_data(customer_enc['telegram_id'])
+                if decrypted_telegram_id and str(decrypted_telegram_id).isdigit():
+                    telegram_id = int(decrypted_telegram_id)
+                    
+                    # Create order button
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(
+                        InlineKeyboardButton(
+                            "📞 Bu ustadan sifariş ver", 
+                            callback_data=f"orde_from_{advertisement['artisan_id']}"
+                        )
+                    )
+                    
+                    if photos:
+                        # Send all photos
+                        if len(photos) == 1:
+                            # Single photo
+                            await bot.send_photo(
+                                chat_id=telegram_id,
+                                photo=photos[0],
+                                caption=f"📢 *Reklam*\n\n{ad_text}",
+                                reply_markup=keyboard,
+                                parse_mode="Markdown"
+                            )
+                        else:
+                            # Multiple photos - send as media group
+                            from aiogram.types import MediaGroup, InputMediaPhoto
+                            media_group = MediaGroup()
+                            
+                            # Add first photo with caption
+                            media_group.attach_photo(
+                                photos[0],
+                                caption=f"📢 *Reklam*\n\n{ad_text}",
+                                parse_mode="Markdown"
+                            )
+                            
+                            # Add remaining photos without caption
+                            for photo in photos[1:]:
+                                media_group.attach_photo(photo)
+                            
+                            # Send media group
+                            await bot.send_media_group(
+                                chat_id=telegram_id,
+                                media=media_group
+                            )
+                            
+                            # Send order button separately
+                            await bot.send_message(
+                                chat_id=telegram_id,
+                                text="👆 Bu ustanın işlərinə baxın və sifariş verin:",
+                                reply_markup=keyboard
+                            )
+                    else:
+                        # Send text only
+                        await bot.send_message(
+                            chat_id=telegram_id,
+                            text=f"📢 *Reklam*\n\n{ad_text}",
+                            reply_markup=keyboard,
+                            parse_mode="Markdown"
+                        )
+                    
+                    success_count += 1
+                    
+            except Exception as e:
+                logger.error(f"Error sending advertisement to customer: {e}")
+                failed_count += 1
+                continue
+        
+        logger.info(f"Advertisement {advertisement_id} broadcasted to {success_count} customers, {failed_count} failed")
+        
+    except Exception as e:
+        logger.error(f"Error in broadcast_advertisement: {e}")
+
+def get_advertisement_templates():
+    """Get advertisement templates for different services"""
+    return {
+        'Santexnik': '{service} axtarırsan? Su problemi yaşayırsan və ya borular sızır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Elektrik': '{service} axtarırsan? Evdə elektrik problemi var və ya yeni quraşdırma lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Kombi ustası': '{service} axtarırsan? Kombi ilə problem yaşayırsan və ya yeni kombi quraşdırma lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Kondisioner ustası': '{service} axtarırsan? Kondisioneriniz isti yay günlərində soyuq hava əvəzinə isti hava vurur? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Mebel ustası': '{service} axtarırsan? Mebellər sınıb və ya yeni mebel yığılması lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Qapı-pəncərə ustası': '{service} axtarırsan? Qapı və ya pəncərələr düzgün işləmir və təmir lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Təmir-bərpa ustası': '{service} axtarırsan? Ev təmiri və ya yenidənqurma işləri lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'Bağban': '{service} axtarırsan? Bağ və həyət sahəsi təmizlənməsi və ya ağac budama lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.',
+        
+        'default': '{service} axtarırsan? Peşəkar xidmət lazımdır? O zaman {subservice1}, {subservice2} xidmətlərini peşəkar şəkildə görən {artisan_name} ustanın əl işi ilə tanış olun və çətində qaldığınız an bu ustadan sifariş verin.'
+    }
+
+async def set_artisan_photo_upload_state(telegram_id, advertisement_id, max_photos):
+    """Set artisan state to photo upload after receipt approval"""
+    try:
+        from handlers.artisan_handler import AdvertisementStates
+        
+        # Create state context for specific user
+        user = telegram_id
+        chat = telegram_id
+        
+        # Set state using dp storage directly
+        await dp.storage.set_state(chat=chat, user=user, state=AdvertisementStates.waiting_for_photos)
+        await dp.storage.set_data(chat=chat, user=user, data={
+            'advertisement_id': advertisement_id,
+            'max_photos': max_photos,
+            'uploaded_photos': []
+        })
+        
+        logger.info(f"Set artisan {telegram_id} to photo upload state for advertisement {advertisement_id}")
+        
+    except Exception as e:
+        logger.error(f"Error setting artisan photo upload state: {e}")
+
+async def set_artisan_receipt_upload_state(telegram_id, advertisement_id):
+    """Set artisan state to receipt upload after admin rejection"""
+    try:
+        from handlers.artisan_handler import AdvertisementStates
+        
+        # Create state context for specific user
+        user = telegram_id
+        chat = telegram_id
+        
+        # Set state using dp storage directly
+        await dp.storage.set_state(chat=chat, user=user, state=AdvertisementStates.waiting_for_receipt)
+        await dp.storage.set_data(chat=chat, user=user, data={
+            'advertisement_id': advertisement_id
+        })
+        
+        logger.info(f"Set artisan {telegram_id} to receipt upload state for advertisement {advertisement_id}")
+        
+    except Exception as e:
+        logger.error(f"Error setting artisan receipt upload state: {e}")
 
 if __name__ == '__main__':
     # Register all handlers

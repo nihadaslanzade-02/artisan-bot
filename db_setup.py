@@ -303,6 +303,24 @@ def setup_database():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
+        # Artisan advertisements table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS artisan_advertisements (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                artisan_id INT NOT NULL,
+                package_type ENUM('bronze', 'silver', 'gold') NOT NULL,
+                payment_amount DECIMAL(10,2) NOT NULL,
+                receipt_photo_id TEXT,
+                advertisement_photos JSON,
+                receipt_status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending',
+                advertisement_status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending',
+                photos_status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (artisan_id) REFERENCES artisans(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ''')
+        
         # Create indexes for better performance
         print("Creating indexes...")
         
@@ -344,6 +362,13 @@ def setup_database():
         cursor.execute('CREATE INDEX idx_order_payments_method ON order_payments (payment_method(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
         cursor.execute('CREATE INDEX idx_fine_receipts_artisan ON fine_receipts (artisan_id)')
         cursor.execute('CREATE INDEX idx_fine_receipts_status ON fine_receipts (status(20))')  # TEXT sütunu üçün uzunluq əlavə edildi
+        
+        # Advertisement indexes
+        cursor.execute('CREATE INDEX idx_artisan_advertisements_artisan ON artisan_advertisements (artisan_id)')
+        cursor.execute('CREATE INDEX idx_artisan_advertisements_package ON artisan_advertisements (package_type)')
+        cursor.execute('CREATE INDEX idx_artisan_advertisements_receipt_status ON artisan_advertisements (receipt_status)')
+        cursor.execute('CREATE INDEX idx_artisan_advertisements_status ON artisan_advertisements (advertisement_status)')
+        cursor.execute('CREATE INDEX idx_artisan_advertisements_photos_status ON artisan_advertisements (photos_status)')
         
         # Update existing orders status if needed
         cursor.execute("UPDATE orders SET status = 'pending' WHERE status IS NULL")

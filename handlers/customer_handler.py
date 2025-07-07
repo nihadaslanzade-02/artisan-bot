@@ -41,6 +41,12 @@ class OrderStates(StatesGroup):
     sharing_location = State()
     entering_note = State()
     confirming_order = State()
+
+class DirectOrderStates(StatesGroup):
+    selecting_subservice = State()
+    sharing_location = State()
+    entering_note = State()
+    confirming_order = State()
     # Tarih ve saat seçme state'leri kaldırıldı
 
 # Define states for viewing nearby artisans
@@ -818,7 +824,102 @@ def register_handlers(dp):
             )
             await state.finish()
             await show_customer_menu(callback_query.message)
+
+    @dp.callback_query_handler(lambda c: c.data.startswith('direct_subservice_'), state=DirectOrderStates.selecting_subservice)
+    async def process_direct_subservice_selection(callback_query: types.CallbackQuery, state: FSMContext):
+        """Process the customer's subservice selection for direct artisan orders"""
+        try:
+            # Extract subservice from callback data
+            selected_subservice = callback_query.data.split('_', 2)[2]
+            
+            # Store subservice in state
+            async with state.proxy() as data:
+                data['subservice'] = selected_subservice
+            
+            # Ask for location with custom message for direct orders
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            keyboard.add(KeyboardButton("📍 Yerimi paylaş", request_location=True))
+            keyboard.add(KeyboardButton("❌ Sifarişi ləğv et"))
+            
+            await callback_query.message.answer(
+                f"Seçdiyiniz xidmət: *{selected_subservice}*\n\n"
+                f"📍 İndi zəhmət olmasa, ustanın sifarişin hansı məsafədən gəldiyini görə bilməsi üçün yerləşdiyiniz məkanı paylaşın.",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            await DirectOrderStates.sharing_location.set()
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"Error in process_direct_subservice_selection: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_customer_menu(callback_query.message)
     
+    # Handler for location sharing in direct orders
+    @dp.message_handler(content_types=types.ContentType.LOCATION, state=DirectOrderStates.sharing_location)
+    async def process_direct_location(message: types.Message, state: FSMContext):
+        """Process the shared location for direct artisan orders"""
+        try:
+            # İş saatleri kontrolü
+            current_hour = datetime.datetime.now().hour
+            
+            # Konfigürasyondan iş saatlerini al
+            from config import TIME_SLOTS_START_HOUR, TIME_SLOTS_END_HOUR
+            
+            # İş saatleri dışındaysa bildir ve durdur
+            if current_hour < TIME_SLOTS_START_HOUR or current_hour >= TIME_SLOTS_END_HOUR:
+                await message.answer(
+                    f"⏰ *Hal-hazırda iş vaxtı deyil.*\n\n"
+                    f"Ustalarımız sadəcə {TIME_SLOTS_START_HOUR}:00 - {TIME_SLOTS_END_HOUR}:00 saatlarında xidmət göstərməktədirlər.\n"
+                    f"Lütfən, iş vaxtı ərzində yenidən cəhd edin.",
+                    parse_mode="Markdown"
+                )
+                await state.finish()
+                await show_customer_menu(message)
+                return
+                
+            # Store location in state
+            latitude = message.location.latitude
+            longitude = message.location.longitude
+            
+            # Get location name based on coordinates (if possible)
+            location_name = await get_location_name(latitude, longitude)
+            
+            async with state.proxy() as data:
+                data['latitude'] = latitude
+                data['longitude'] = longitude
+                data['location_name'] = location_name
+                current_time = datetime.datetime.now()
+                data['date_time'] = current_time.strftime("%Y-%m-%d %H:%M")
+            
+            # Create note input keyboard
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            keyboard.add(KeyboardButton("❌ Sifarişi ləğv et"))
+            
+            # Ask for additional notes
+            await message.answer(
+                f"📍 Yeriniz: {location_name if location_name else 'qeydə alındı'}\n\n"
+                "✍️ Zəhmət olmasa, probleminiz haqqında qısa məlumat yazın. "
+                "Bu, ustanın sizə daha yaxşı xidmət göstərməsinə kömək edəcək:",
+                reply_markup=keyboard
+            )
+            
+            # Doğrudan not giriş aşamasına geç
+            await DirectOrderStates.entering_note.set()
+            
+        except Exception as e:
+            logger.error(f"Error in process_direct_location: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.\n\n"
+                "📱 Məkan paylaşarkən əgər problem yaranırsa, telefonunuzun parametrlərində GPS xidmətinin aktiv olduğundan əmin olun."
+            )
+            await state.finish()
+            await show_customer_menu(message)
+
     # Handler for location sharing
     @dp.message_handler(content_types=types.ContentType.LOCATION, state=OrderStates.sharing_location)
     async def process_location(message: types.Message, state: FSMContext):
@@ -930,6 +1031,60 @@ def register_handlers(dp):
             
         except Exception as e:
             logger.error(f"Error in process_note: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_customer_menu(message)
+
+    # Handler for note input in direct orders
+    @dp.message_handler(state=DirectOrderStates.entering_note)
+    async def process_direct_note(message: types.Message, state: FSMContext):
+        """Process the note input for direct artisan orders"""
+        try:
+            # Skip processing if user wants to cancel
+            if message.text == "❌ Sifarişi ləğv et":
+                await cancel_order_process(message, state)
+                await show_customer_menu(message)
+                return
+                
+            # Store the note in state
+            async with state.proxy() as data:
+                data['note'] = message.text
+                
+                # Get location name for display
+                location_display = data.get('location_name', 'Paylaşılan məkan')
+                
+                # Create order summary for confirmation
+                service_text = data['service']
+                if 'subservice' in data:
+                    service_text += f" ({data['subservice']})"
+                
+                order_summary = (
+                    "📋 *Sifariş məlumatları:*\n\n"
+                    f"🛠 *Xidmət:* {service_text}\n"
+                    f"📍 *Yer:* {location_display}\n"
+                    f"📝 *Qeyd:* {data['note']}\n\n"
+                    f"Bu məlumatları təsdiqləyirsiniz?"
+                )
+            
+            # Create confirmation keyboard
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("✅ Təsdiqlə", callback_data="confirm_direct_order"),
+                InlineKeyboardButton("❌ Ləğv et", callback_data="cancel_direct_order")
+            )
+            
+            await message.answer(
+                order_summary,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            await DirectOrderStates.confirming_order.set()
+            
+        except Exception as e:
+            logger.error(f"Error in process_direct_note: {e}")
             await message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
@@ -1123,6 +1278,120 @@ def register_handlers(dp):
             
         except Exception as e:
             logger.error(f"Error in cancel_order: {e}")
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_customer_menu(callback_query.message)
+
+    # Handler for direct order confirmation
+    @dp.callback_query_handler(lambda c: c.data == "confirm_direct_order", state=DirectOrderStates.confirming_order)
+    async def confirm_direct_order(callback_query: types.CallbackQuery, state: FSMContext):
+        """Handle direct order confirmation (order from specific artisan)"""
+        try:
+            # Get all order data from state
+            data = await state.get_data()
+            
+            # Get customer information
+            customer_id = get_or_create_customer(
+                callback_query.from_user.id,
+                callback_query.from_user.full_name
+            )
+            
+            # Get artisan ID from state (already determined)
+            artisan_id = data.get('artisan_id')
+            service = data['service']
+            
+            # Bolt-style order notification for direct orders
+            await callback_query.message.answer(
+                "🔍 *Sifarişiniz ustaya göndərilir...*\n\n"
+                "Sifarişiniz seçdiyiniz ustaya göndərildi.\n"
+                "Usta cavab verdikdə dərhal sizə bildiriş edəcəyik.",
+                parse_mode="Markdown",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            
+            # Insert the order into the database with "searching" status
+            try:
+                location_name = await get_location_name(data['latitude'], data['longitude']) if 'latitude' in data and 'longitude' in data else "Bilinməyən yer"
+
+                order_id = insert_order(
+                    customer_id=customer_id,
+                    artisan_id=None,  # Will be assigned after artisan accepts
+                    service=service,
+                    date_time=data['date_time'],
+                    note=data['note'],
+                    latitude=data['latitude'],
+                    longitude=data['longitude'],
+                    location_name=location_name,
+                    subservice=data.get('subservice'),
+                    status="searching"  # Using "searching" status
+                )
+                
+                logger.info(f"Created new direct order with ID: {order_id} for artisan: {artisan_id}")
+                
+                if not order_id:
+                    logger.error("Failed to create direct order, no order_id returned")
+                    await callback_query.message.answer(
+                        "❌ Sifariş yaradılarkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
+                        reply_markup=types.ReplyKeyboardRemove()
+                    )
+                    await show_customer_menu(callback_query.message)
+                    return
+                
+                # Send notification ONLY to the specific artisan
+                from notification_service import notify_artisan_about_new_order
+                
+                try:
+                    success = await notify_artisan_about_new_order(order_id, artisan_id)
+                    if success:
+                        logger.info(f"Direct order notification sent to artisan {artisan_id} for order {order_id}")
+                    else:
+                        logger.error(f"Failed to notify artisan {artisan_id} for direct order")
+                except Exception as e:
+                    logger.error(f"Failed to notify artisan {artisan_id} for direct order: {e}")
+                
+                # Schedule a check after 60 seconds with special handling for direct orders
+                from order_status_service import check_direct_order_acceptance
+                asyncio.create_task(check_direct_order_acceptance(order_id, customer_id, artisan_id, 60))
+                    
+            except Exception as e:
+                logger.error(f"Database error when inserting direct order: {e}", exc_info=True)
+                await callback_query.message.answer(
+                    f"❌ Sifariş yaradılarkən xəta baş verdi. Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
+                    reply_markup=types.ReplyKeyboardRemove()
+                )
+                await show_customer_menu(callback_query.message)
+            
+            await callback_query.answer()  # Acknowledge the callback
+            await state.finish()  # End the conversation
+                
+        except Exception as e:
+            logger.error(f"Error in confirm_direct_order: {e}", exc_info=True)
+            await callback_query.message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
+            await state.finish()
+            await show_customer_menu(callback_query.message)
+
+    # Handler for direct order cancellation from confirmation
+    @dp.callback_query_handler(lambda c: c.data == "cancel_direct_order", state=DirectOrderStates.confirming_order)
+    async def cancel_direct_order(callback_query: types.CallbackQuery, state: FSMContext):
+        """Handle direct order cancellation from confirmation"""
+        try:
+            await callback_query.message.answer(
+                "❌ Sifariş ləğv edildi.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            
+            # Return to customer menu
+            await show_customer_menu(callback_query.message)
+            
+            await callback_query.answer()  # Acknowledge the callback
+            await state.finish()  # End the conversation
+            
+        except Exception as e:
+            logger.error(f"Error in cancel_direct_order: {e}")
             await callback_query.message.answer(
                 "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
             )
@@ -1818,16 +2087,19 @@ def register_handlers(dp):
                 await show_customer_menu(callback_query.message)
                 return
             
-            # Store artisan info in state
+            # Store artisan info in state for direct ordering
             await state.finish()  # Clear any previous state
-            await OrderStates.selecting_service.set()
+            await DirectOrderStates.selecting_subservice.set()
             
             async with state.proxy() as data:
                 data['artisan_id'] = artisan_id
-                data['service'] = artisan['service']  # Service is the 4th column
+                data['service'] = artisan['service']
+                data['is_direct_order'] = True  # Flag to indicate this is a direct order
             
-            # Get subservices for this service
-            subservices = get_subservices(artisan['service'])
+            # Get subservices that this specific artisan offers
+            from db import get_artisan_subservices
+            artisan_subservices = get_artisan_subservices(artisan_id)
+            
             # Maskalanmış usta məlumatlarını əldə edirik
             try:
                 masked_artisan = get_masked_artisan_by_id(artisan_id)
@@ -1840,49 +2112,40 @@ def register_handlers(dp):
             # Əgər maskelənmiş usta bilgisi alınmazsa, default dəyərlər istifadə et
             if not masked_artisan:
                 name = "U**** A***"
-                
             else:
                 # Maskelənmiş bilgiləri al
                 name = masked_artisan.get('name', "Bilinmir")
             
             import html
-            if subservices:
-                # Create keyboard with subservice options
+            if artisan_subservices:
+                # Create keyboard with artisan's specific subservice options
                 keyboard = InlineKeyboardMarkup(row_width=1)
                 
-                for subservice in subservices:
+                for subservice_data in artisan_subservices:
+                    subservice_name = subservice_data['subservice_name']
                     keyboard.add(
                         InlineKeyboardButton(
-                            subservice, 
-                            callback_data=f"subservice_{subservice}"
+                            subservice_name, 
+                            callback_data=f"direct_subservice_{subservice_name}"
                         )
                     )
                 
                 keyboard.add(InlineKeyboardButton("🔙 Geri", callback_data="back_to_menu"))
                 
-
                 await callback_query.message.answer(
                     f"Siz {html.escape(name)} adlı ustadan *{artisan['service']}* xidməti sifariş vermək istəyirsiniz.\n\n"
-                    f"İndi zəhmət olmasa, daha dəqiq xidmət növünü seçin:",
+                    f"Bu ustanın təklif etdiyi xidmətlər aşağıda göstərilir. Zəhmət olmasa, istədiyiniz xidməti seçin:",
                     reply_markup=keyboard,
                     parse_mode="Markdown"
                 )
-                
-                await OrderStates.selecting_subservice.set()
             else:
-                # If no subservices (unlikely), proceed directly to location
-                keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-                keyboard.add(KeyboardButton("📍 Yerimi paylaş", request_location=True))
-                keyboard.add(KeyboardButton("❌ Sifarişi ləğv et"))
-                
+                # If artisan has no subservices configured, show error
                 await callback_query.message.answer(
-                    f"Siz {html.escape(name)} adlı ustadan *{artisan['service']}* xidməti sifariş vermək istəyirsiniz.\n\n"
-                    f"📍 İndi zəhmət olmasa, yerləşdiyiniz məkanı paylaşın:",
-                    reply_markup=keyboard,
+                    f"❌ Təəssüf ki, {html.escape(name)} adlı ustanın hal-hazırda aktiv heç bir xidməti yoxdur.\n\n"
+                    f"Zəhmət olmasa, başqa ustanı seçin və ya gələcəkdə yenidən cəhd edin.",
                     parse_mode="Markdown"
                 )
-                
-                await OrderStates.sharing_location.set()
+                await show_customer_menu(callback_query.message)
             
             await callback_query.answer()
             

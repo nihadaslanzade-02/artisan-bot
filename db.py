@@ -2952,3 +2952,462 @@ def delete_user_completely(user_type, user_id):
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+# =============================================================================
+# ADVERTISEMENT SYSTEM FUNCTIONS
+# =============================================================================
+
+def create_advertisement_request(artisan_id, package_type, payment_amount):
+    """Create a new advertisement request
+    
+    Args:
+        artisan_id (int): ID of the artisan
+        package_type (str): Package type (bronze, silver, gold)
+        payment_amount (float): Payment amount
+        
+    Returns:
+        int: Advertisement request ID or None if failed
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            INSERT INTO artisan_advertisements 
+            (artisan_id, package_type, payment_amount, receipt_status, advertisement_status, photos_status)
+            VALUES (%s, %s, %s, 'pending', 'pending', 'pending')
+            """,
+            (artisan_id, package_type, payment_amount)
+        )
+        
+        conn.commit()
+        return cursor.lastrowid
+        
+    except Exception as e:
+        logger.error(f"Error creating advertisement request: {e}")
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def update_advertisement_receipt(advertisement_id, receipt_photo_id):
+    """Update advertisement with receipt photo
+    
+    Args:
+        advertisement_id (int): Advertisement ID
+        receipt_photo_id (str): File ID of receipt photo
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            UPDATE artisan_advertisements 
+            SET receipt_photo_id = %s, receipt_status = 'pending'
+            WHERE id = %s
+            """,
+            (receipt_photo_id, advertisement_id)
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error updating advertisement receipt: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def update_advertisement_photos(advertisement_id, photos_list):
+    """Update advertisement with photos
+    
+    Args:
+        advertisement_id (int): Advertisement ID
+        photos_list (list): List of photo file IDs
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        import json
+        photos_json = json.dumps(photos_list)
+        
+        cursor.execute(
+            """
+            UPDATE artisan_advertisements 
+            SET advertisement_photos = %s, photos_status = 'pending'
+            WHERE id = %s
+            """,
+            (photos_json, advertisement_id)
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error updating advertisement photos: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_pending_advertisement_receipts():
+    """Get all pending advertisement receipts for admin review
+    
+    Returns:
+        list: List of advertisements with pending receipts
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT aa.*, a.name as artisan_name, a.service as artisan_service
+            FROM artisan_advertisements aa
+            JOIN artisans a ON aa.artisan_id = a.id
+            WHERE aa.receipt_status = 'pending' AND aa.receipt_photo_id IS NOT NULL
+            ORDER BY aa.created_at ASC
+            """
+        )
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        logger.error(f"Error getting pending advertisement receipts: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_advertisement_by_id(advertisement_id):
+    """Get advertisement by ID
+    
+    Args:
+        advertisement_id (int): Advertisement ID
+        
+    Returns:
+        dict: Advertisement data or None if not found
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT aa.*, a.name as artisan_name, a.service as artisan_service, 
+                   a.telegram_id as artisan_telegram_id
+            FROM artisan_advertisements aa
+            JOIN artisans a ON aa.artisan_id = a.id
+            WHERE aa.id = %s
+            """,
+            (advertisement_id,)
+        )
+        
+        return cursor.fetchone()
+        
+    except Exception as e:
+        logger.error(f"Error getting advertisement by ID: {e}")
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def update_advertisement_status(advertisement_id, status_type, status_value):
+    """Update advertisement status
+    
+    Args:
+        advertisement_id (int): Advertisement ID
+        status_type (str): Status type (receipt_status, advertisement_status, photos_status)
+        status_value (str): Status value (pending, accepted, rejected)
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        valid_status_types = ['receipt_status', 'advertisement_status', 'photos_status']
+        valid_status_values = ['pending', 'accepted', 'rejected']
+        
+        if status_type not in valid_status_types:
+            logger.error(f"Invalid status type: {status_type}")
+            return False
+            
+        if status_value not in valid_status_values:
+            logger.error(f"Invalid status value: {status_value}")
+            return False
+        
+        query = f"UPDATE artisan_advertisements SET {status_type} = %s WHERE id = %s"
+        cursor.execute(query, (status_value, advertisement_id))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error updating advertisement status: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_artisan_advertisements(artisan_id, status=None):
+    """Get advertisements for a specific artisan
+    
+    Args:
+        artisan_id (int): Artisan ID
+        status (str): Filter by status (optional)
+        
+    Returns:
+        list: List of advertisements
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        if status:
+            cursor.execute(
+                """
+                SELECT * FROM artisan_advertisements 
+                WHERE artisan_id = %s AND advertisement_status = %s
+                ORDER BY created_at DESC
+                """,
+                (artisan_id, status)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM artisan_advertisements 
+                WHERE artisan_id = %s
+                ORDER BY created_at DESC
+                """,
+                (artisan_id,)
+            )
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        logger.error(f"Error getting artisan advertisements: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_accepted_advertisements():
+    """Get all accepted advertisements ready for broadcasting
+    
+    Returns:
+        list: List of accepted advertisements
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT aa.*, a.name as artisan_name, a.service as artisan_service
+            FROM artisan_advertisements aa
+            JOIN artisans a ON aa.artisan_id = a.id
+            WHERE aa.receipt_status = 'accepted' 
+            AND aa.advertisement_status = 'accepted' 
+            AND aa.photos_status = 'accepted'
+            ORDER BY aa.created_at DESC
+            """
+        )
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        logger.error(f"Error getting accepted advertisements: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def clear_advertisement_photos(advertisement_id):
+    """Clear advertisement photos
+    
+    Args:
+        advertisement_id (int): Advertisement ID
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            UPDATE artisan_advertisements 
+            SET advertisement_photos = NULL, photos_status = 'rejected'
+            WHERE id = %s
+            """,
+            (advertisement_id,)
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error clearing advertisement photos: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def clear_advertisement_receipt(advertisement_id):
+    """Clear advertisement receipt
+    
+    Args:
+        advertisement_id (int): Advertisement ID
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            UPDATE artisan_advertisements 
+            SET receipt_photo_id = NULL, receipt_status = 'rejected'
+            WHERE id = %s
+            """,
+            (advertisement_id,)
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        logger.error(f"Error clearing advertisement receipt: {e}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_random_customers(count):
+    """Get random customers for advertisement broadcasting
+    
+    Args:
+        count (int): Number of customers to get
+        
+    Returns:
+        list: List of random customers
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT telegram_id, name FROM customers 
+            WHERE active = 1 
+            ORDER BY RAND() 
+            LIMIT %s
+            """,
+            (count,)
+        )
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        logger.error(f"Error getting random customers: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_total_customers_count():
+    """Get total count of active customers
+    
+    Returns:
+        int: Total number of active customers
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM customers WHERE active = 1")
+        return cursor.fetchone()[0]
+        
+    except Exception as e:
+        logger.error(f"Error getting total customers count: {e}")
+        return 0
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_artisan_subservices(artisan_id):
+    """Get subservices for an artisan
+    
+    Args:
+        artisan_id (int): Artisan ID
+        
+    Returns:
+        list: List of subservices
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT s.name as subservice_name 
+            FROM artisan_price_ranges apr
+            JOIN subservices s ON apr.subservice_id = s.id
+            WHERE apr.artisan_id = %s AND apr.is_active = 1
+            ORDER BY s.name
+            """,
+            (artisan_id,)
+        )
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        logger.error(f"Error getting artisan subservices: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_pending_advertisement_photos():
+    """Get all pending advertisement photos for admin review
+    
+    Returns:
+        list: List of advertisements with pending photos
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT aa.*, a.name as artisan_name, a.service as artisan_service
+            FROM artisan_advertisements aa
+            JOIN artisans a ON aa.artisan_id = a.id
+            WHERE aa.photos_status = 'pending' AND aa.advertisement_photos IS NOT NULL
+            ORDER BY aa.created_at ASC
+            """
+        )
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        logger.error(f"Error getting pending advertisement photos: {e}")
+        return []
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
