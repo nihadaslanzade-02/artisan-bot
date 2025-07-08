@@ -762,8 +762,10 @@ def register_handlers(dp):
                     # Show artisan menu as fallback
                     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
                     keyboard.add(KeyboardButton("📋 Aktiv sifarişlər"))
+                    keyboard.add(KeyboardButton("📺 Reklam ver"))
                     keyboard.add(KeyboardButton("⭐ Rəylər"), KeyboardButton("📊 Statistika"))
                     keyboard.add(KeyboardButton("💰 Qiymət ayarları"), KeyboardButton("⚙️ Profil ayarları"))
+                    keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
                     keyboard.add(KeyboardButton("🔄 Rol seçiminə qayıt"))
                     
                     await callback_query.message.answer(
@@ -2996,8 +2998,10 @@ def register_handlers(dp):
             # Show main menu for non-initial registration or if card info exists
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
             keyboard.add(KeyboardButton("📋 Aktiv sifarişlər"))
+            keyboard.add(KeyboardButton("📺 Reklam ver"))
             keyboard.add(KeyboardButton("⭐ Rəylər"), KeyboardButton("📊 Statistika"))
             keyboard.add(KeyboardButton("💰 Qiymət ayarları"), KeyboardButton("⚙️ Profil ayarları"))
+            keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
             keyboard.add(KeyboardButton("🔄 Rol seçiminə qayıt"))
             
             await callback_query.message.answer(
@@ -3018,8 +3022,10 @@ def register_handlers(dp):
             # Show artisan menu even on error
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
             keyboard.add(KeyboardButton("📋 Aktiv sifarişlər"))
+            keyboard.add(KeyboardButton("📺 Reklam ver"))
             keyboard.add(KeyboardButton("⭐ Rəylər"), KeyboardButton("📊 Statistika"))
             keyboard.add(KeyboardButton("💰 Qiymət ayarları"), KeyboardButton("⚙️ Profil ayarları"))
+            keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
             keyboard.add(KeyboardButton("🔄 Rol seçiminə qayıt"))
             
             await callback_query.message.answer(
