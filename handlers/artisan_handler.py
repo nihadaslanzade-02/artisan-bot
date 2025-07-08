@@ -135,11 +135,11 @@ def register_handlers(dp):
                 if is_blocked:
                     # Show blocked message with reason and payment requirements
                     await message.answer(
-                        f"⛔ *Hesabınız bloklanıb*\n\n"
+                        f"⛔ <b>Hesabınız bloklanıb</b>\n\n"
                         f"Səbəb: {reason}\n\n"
                         f"Bloku açmaq üçün {required_payment} AZN ödəniş etməlisiniz.\n"
                         f"Ödəniş etmək üçün: /pay_fine komandası ilə ətraflı məlumat ala bilərsiniz.",
-                        parse_mode="Markdown"
+                        parse_mode="HTML"
                     )
                     return
         
@@ -1190,12 +1190,7 @@ def register_handlers(dp):
                 conn.close()
             
             # Save price to order in database using the main function
-            success = set_order_price(
-                order_id,
-                price,
-                admin_fee,
-                artisan_amount
-            )
+            success = set_order_price(order_id, price, admin_fee, artisan_amount)
             
             if success:
                 # Show payment options to artisan
@@ -3536,40 +3531,7 @@ def register_handlers(dp):
                             "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
                         )
                     
-            elif action == 'fine_payment':
-                # Handle fine payment receipt
-                artisan_id = get_artisan_by_telegram_id(telegram_id)
-                
-                if not artisan_id:
-                    await message.answer("❌ Hesabınız tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-                    return
-                
-                # Get the highest quality photo
-                photo = message.photo[-1]
-                file_id = photo.file_id
-                
-                # Save fine receipt to database
-                success = save_fine_receipt(artisan_id, file_id)
-                
-                if success:
-                    await message.answer(
-                        "✅ Cərimə ödənişinin qəbzi uğurla yükləndi!\n\n"
-                        "Qəbz yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq. "
-                        "Bu, adətən 24 saat ərzində baş verir.",
-                        reply_markup=types.ReplyKeyboardRemove()
-                    )
-                    
-                    # Clear user context
-                    clear_user_context(telegram_id)
-                    
-                    # Restore main menu
-                    await show_artisan_menu(message)
-                else:
-                    await message.answer(
-                        "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-                    )
-                    # Restore main menu to prevent UI getting stuck
-                    await show_artisan_menu(message)
+            # fine_payment is now handled in customer_handler with unified approach
             
         except Exception as e:
             logger.error(f"Error in handle_receipt_photo: {e}", exc_info=True)
@@ -3647,16 +3609,38 @@ def register_handlers(dp):
         try:
             telegram_id = callback_query.from_user.id
             
-            # Set context for receipt upload
+            # Check if artisan exists and is blocked
+            artisan_id = get_artisan_by_telegram_id(telegram_id)
+            if not artisan_id:
+                await callback_query.answer("❌ Usta məlumatları tapılmadı.", show_alert=True)
+                return
+            
+            # Check block status
+            from db import get_artisan_blocked_status
+            is_blocked, reason, amount = get_artisan_blocked_status(artisan_id)
+            
+            if not is_blocked:
+                await callback_query.answer("✅ Hesabınızda heç bir blok yoxdur.", show_alert=True)
+                return
+            
+            # Set context for fine receipt upload
             context_data = {
-                "action": "fine_payment"
+                "action": "fine_payment",
+                "user_type": "artisan",
+                "artisan_id": artisan_id,
+                "reason": reason,
+                "amount": amount
             }
             
             set_user_context(telegram_id, context_data)
             
             await callback_query.message.answer(
-                "📸 Zəhmət olmasa, ödəniş qəbzinin şəklini göndərin.\n\n"
-                "Şəkil aydın və oxunaqlı olmalıdır. Ödəniş məbləği, tarix və kart məlumatları görünməlidir."
+                f"💰 <b>Cərimə Ödənişi</b>\n\n"
+                f"🚫 Blok səbəbi: {reason}\n"
+                f"💸 Ödəniş məbləği: {amount} AZN\n\n"
+                f"📸 Zəhmət olmasa ödəniş qəbzini foto şəklində göndərin.\n"
+                f"📋 Qəbz admin tərəfindən yoxlanılacaq və təsdiqlənəndə blok açılacaq.",
+                parse_mode="HTML"
             )
             
             await callback_query.answer()
@@ -4869,14 +4853,21 @@ def register_handlers(dp):
                     customer_id = get_customer_by_telegram_id(telegram_id)
                     if customer_id:
                         # Check if customer is blocked
-                        is_blocked, reason, amount = get_customer_blocked_status(customer_id)
+                        is_blocked, reason, amount, block_until = get_customer_blocked_status(customer_id)
                         
                         if is_blocked:
+                            # Create payment button for blocked customer
+                            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                            
+                            keyboard = InlineKeyboardMarkup(row_width=1)
+                            keyboard.add(InlineKeyboardButton("💰 Cəriməni ödə", callback_data="pay_customer_fine"))
+                            
                             await message.answer(
                                 f"⛔ Hesabınız bloklanıb. Xidmətdən istifadə etmək üçün bloku açın.\n"
                                 f"Səbəb: {reason}\n"
                                 f"Ödəniş məbləği: {amount} AZN\n"
-                                f"Ödəniş etmək üçün: /pay_customer_fine"
+                                f"Ödəniş etmək üçün aşağıdakı düyməni basın və ya /pay_customer_fine komandasını istifadə edin.",
+                                reply_markup=keyboard
                             )
                             return
                         
@@ -4990,13 +4981,8 @@ def register_handlers(dp):
                 admin_fee = price * commission_rate
                 artisan_amount = price - admin_fee
                 
-                # Save price to order in database - Parametreleri sırasıyla gönderin, anahtar kullanmadan
-                success = db.set_order_price(
-                    order_id,
-                    price,
-                    admin_fee,
-                    artisan_amount
-                )
+                # Save price to order in database
+                success = db.set_order_price(order_id, price, admin_fee, artisan_amount)
                 
                 if success:
                     # Clear context

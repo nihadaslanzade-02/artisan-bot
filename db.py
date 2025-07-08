@@ -5,6 +5,7 @@ from mysql.connector import Error
 from mysql.connector.cursor import MySQLCursorDict
 import math
 from datetime import datetime, timedelta
+from decimal import Decimal
 import json
 import logging
 from config import DB_CONFIG, COMMISSION_RATES
@@ -850,7 +851,7 @@ def save_fine_receipt(artisan_id, file_id):
         file_id (str): Telegram file ID of the receipt
         
     Returns:
-        bool: True if successful, False otherwise
+        int|bool: Receipt ID if successful, False otherwise
     """
     query = """
         INSERT INTO fine_receipts 
@@ -863,7 +864,8 @@ def save_fine_receipt(artisan_id, file_id):
         cursor = conn.cursor()
         cursor.execute(query, (artisan_id, file_id))
         conn.commit()
-        return cursor.lastrowid is not None
+        receipt_id = cursor.lastrowid
+        return receipt_id if receipt_id else False
     except Exception as e:
         logger.error(f"Error saving fine receipt: {e}")
         return False
@@ -1559,11 +1561,14 @@ def set_user_context(telegram_id, context_data):
         context_json = None
         
         if isinstance(context_data, dict):
-            # Convert datetime objects to strings
+            # Convert datetime and decimal objects to strings
             cleaned_data = {}
             for key, value in context_data.items():
                 if isinstance(value, datetime):
                     cleaned_data[key] = value.strftime("%Y-%m-%d %H:%M:%S")
+                elif isinstance(value, Decimal):
+                    # Convert Decimal to float for JSON serialization
+                    cleaned_data[key] = float(value)
                 else:
                     cleaned_data[key] = value
             
@@ -2166,7 +2171,9 @@ def get_customer_blocked_status(customer_id):
         conn = get_connection()
         cursor = conn.cursor()
         
-        cursor.execute(check_table_query, (DB_CONFIG['database'],))
+        # Use string value instead of dict key directly in tuple
+        database_name = DB_CONFIG['database']
+        cursor.execute(check_table_query, (database_name,))
         table_exists = cursor.fetchone()[0] > 0
         
         if not table_exists:
@@ -2343,7 +2350,7 @@ def save_customer_fine_receipt(customer_id, file_id):
         file_id (str): Telegram file ID of the receipt
         
     Returns:
-        bool: True if successful, False otherwise
+        int|bool: Receipt ID if successful, False otherwise
     """
     try:
         conn = get_connection()
@@ -2382,7 +2389,8 @@ def save_customer_fine_receipt(customer_id, file_id):
         """, (customer_id, file_id))
         
         conn.commit()
-        return True
+        receipt_id = cursor.lastrowid
+        return receipt_id if receipt_id else False
     except Exception as e:
         logger.error(f"Error saving customer fine receipt: {e}")
         return False

@@ -19,6 +19,7 @@ import random
 from order_status_service import check_order_acceptance
 from db_encryption_wrapper import wrap_get_dict_function
 
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -2754,9 +2755,136 @@ def register_handlers(dp):
             # Still show menu even if there's an error
             await show_customer_menu(callback_query.message)
 
-
+    async def show_artisan_menu_local(message: types.Message):
+        """Show the main artisan menu - local copy to avoid import issues"""
+        try:
+            # Get artisan ID to check registration
+            telegram_id = message.from_user.id
+            artisan_id = get_artisan_by_telegram_id(telegram_id)
+            
+            if not artisan_id:
+                # If not registered, show role selection menu
+                await show_role_selection(message)
+                return
+                    
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+            keyboard.add(KeyboardButton("📋 Aktiv sifarişlər"))
+            keyboard.add(KeyboardButton("📺 Reklam ver"))
+            keyboard.add(KeyboardButton("⭐ Rəylər"), KeyboardButton("📊 Statistika"))
+            keyboard.add(KeyboardButton("💰 Qiymət ayarları"), KeyboardButton("⚙️ Profil ayarları"))
+            keyboard.add(KeyboardButton("ℹ️ Əmr bələdçisi"))
+            keyboard.add(KeyboardButton("🔄 Rol seçiminə qayıt"))
+            
+            await message.answer(
+                "👷‍♂️ *Usta Paneli*\n\n"
+                "Aşağıdakı əməliyyatlardan birini seçin:",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Error in show_artisan_menu_local: {e}")
+            await message.answer(
+                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+            )
 
     # customer_handler.py içine ekleyeceğimiz kod:
+
+    async def handle_artisan_photo_logic(message: types.Message, telegram_id: int, context: dict):
+        """Handle artisan photo uploads (delegated from customer handler)"""
+        try:
+            action = context.get('action')
+            
+            if action == 'fine_payment':
+                logger.info(f"Processing artisan fine_payment for user {telegram_id}")
+                
+                # Try to get artisan_id from context first, then fallback to telegram_id lookup
+                artisan_id = context.get('artisan_id')
+                if not artisan_id:
+                    artisan_id = get_artisan_by_telegram_id(telegram_id)
+                
+                if not artisan_id:
+                    await message.answer("❌ Usta məlumatları tapılmadı.")
+                    return
+                
+                reason = context.get('reason', 'Təyin edilməyib')
+                amount = context.get('amount', 'Təyin edilməyib')
+                
+                # Get the highest quality photo
+                photo = message.photo[-1]
+                file_id = photo.file_id
+                
+                # Save fine receipt for artisan
+                from db import save_fine_receipt
+                receipt_id = save_fine_receipt(artisan_id, file_id)
+
+                if receipt_id:
+                    # Clear user context
+                    clear_user_context(telegram_id)
+                    
+                    await message.answer(
+                        "✅ Çərimə ödənişi qəbzi uğurla yükləndi!\n\n"
+                        "Qəbz admin tərəfindən yoxlanılacaq və təsdiqlənəndə hesabınız blokdan çıxarılacaq. "
+                        "Bu, adətən 24 saat ərzində baş verir.",
+                        reply_markup=types.ReplyKeyboardRemove()
+                    )
+                    
+                    # Notify admins about new fine receipt
+                    try:
+                        from bot import BOT_ADMINS, bot
+                        admin_list = BOT_ADMINS  # Admin telegram IDs
+                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                        
+                        # Create verification buttons for admin
+                        keyboard = InlineKeyboardMarkup(row_width=2)
+                        keyboard.add(
+                            InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"approve_artisan_fine_{artisan_id}_{receipt_id}"),
+                            InlineKeyboardButton("❌ Rədd et", callback_data=f"reject_artisan_fine_{artisan_id}_{receipt_id}")
+                        )
+                        
+                        # Get artisan blocked status for better info
+                        is_blocked, reason, amount = get_artisan_blocked_status(artisan_id)
+                        
+                        for admin_id in admin_list:
+                            await bot.send_photo(
+                                chat_id=admin_id,
+                                photo=file_id,
+                                caption=f"💰 *Usta çərimə ödənişi qəbzi*\n\n"
+                                    f"Usta ID: {artisan_id}\n"
+                                    f"Telegram ID: {telegram_id}\n"
+                                    f"Qəbz ID: {receipt_id}\n"
+                                    f"Səbəb: {reason or 'Təyin edilməyib'}\n"
+                                    f"Məbləğ: {amount or 'Təyin edilməyib'} AZN\n\n"
+                                    f"Zəhmət olmasa yoxlayın və təsdiqləyin.",
+                                parse_mode="Markdown",
+                                reply_markup=keyboard
+                            )
+                    except Exception as admin_error:
+                        logger.error(f"Error notifying admin about artisan fine: {admin_error}")
+                    
+                    # Restore main menu
+                    try:
+                        await show_artisan_menu_local(message)
+                    except Exception as menu_error:
+                        logger.error(f"Error showing artisan menu: {menu_error}")
+                        await message.answer("✅ Əməliyyat tamamlandı.")
+                else:
+                    await message.answer(
+                        "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+                    )
+                    # Restore main menu to prevent UI getting stuck
+                    try:
+                        await show_artisan_menu_local(message)
+                    except Exception as menu_error:
+                        logger.error(f"Error showing artisan menu: {menu_error}")
+            
+            # Add other artisan photo actions here if needed in the future
+            else:
+                logger.warning(f"Unknown artisan photo action: {action}")
+                await message.answer("❌ Naməlum əməliyyat. Zəhmət olmasa yenidən cəhd edin.")
+                
+        except Exception as e:
+            logger.error(f"Error in handle_artisan_photo_logic: {e}")
+            await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
 
     @dp.message_handler(content_types=types.ContentType.PHOTO)
     async def handle_photo(message: types.Message):
@@ -2769,6 +2897,12 @@ def register_handlers(dp):
             
             if not context or not context.get('action'):
                 # No context requiring photo, ignore
+                return
+            
+            # If user is an artisan, delegate to artisan handler logic
+            if context.get('user_type') == 'artisan':
+                logger.info(f"User {telegram_id} is artisan - processing in customer handler with artisan logic")
+                await handle_artisan_photo_logic(message, telegram_id, context)
                 return
             
             action = context.get('action')
@@ -2898,12 +3032,23 @@ def register_handlers(dp):
                         "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
                     )
 
-            elif action == 'customer_fine_receipt':
-                # Get customer info
-                customer = get_customer_by_telegram_id(telegram_id)
-                if not customer:
+            elif action == 'fine_payment':
+                # Handle customer fine payment receipt upload 
+                logger.info(f"Processing customer fine_payment for user {telegram_id}")
+                
+                # Try to get customer_id from context first, then fallback to telegram_id lookup
+                customer_id = context.get('customer_id')
+                if not customer_id:
+                    customer = get_customer_by_telegram_id(telegram_id)
+                    if customer:
+                        customer_id = customer['id']
+                
+                if not customer_id:
                     await message.answer("❌ Müştəri məlumatları tapılmadı.")
                     return
+                
+                reason = context.get('reason', 'Təyin edilməyib')
+                amount = context.get('amount', 'Təyin edilməyib')
                 
                 # Get the highest quality photo
                 photo = message.photo[-1]
@@ -2911,9 +3056,70 @@ def register_handlers(dp):
                 
                 # Save fine receipt for customer
                 from db import save_customer_fine_receipt
-                success = save_customer_fine_receipt(customer['id'], file_id)
+                receipt_id = save_customer_fine_receipt(customer_id, file_id)
 
-                if success:
+                if receipt_id:
+                    # Clear user context
+                    clear_user_context(telegram_id)
+                    
+                    await message.answer(
+                        "✅ Cərimə ödənişinin qəbzi uğurla yükləndi!\n\n"
+                        "Qəbz admin tərəfindən yoxlanılacaq və təsdiqlənəndə hesabınız blokdan çıxarılacaq. "
+                        "Bu, adətən 24 saat ərzində baş verir.",
+                        reply_markup=types.ReplyKeyboardRemove()
+                    )
+                    
+                    # Notify admins about new customer fine receipt
+                    try:
+                        from config import BOT_ADMINS
+                        from dispatcher import bot
+                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                        customer_info = get_customer_by_id(customer_id)
+                        customer_name = customer_info.get('name', 'Naməlum') if customer_info else 'Naməlum'
+                        
+                        # Create verification buttons for admin
+                        keyboard = InlineKeyboardMarkup(row_width=2)
+                        keyboard.add(
+                            InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"approve_customer_fine_{customer_id}_{receipt_id}"),
+                            InlineKeyboardButton("❌ Rədd et", callback_data=f"reject_customer_fine_{customer_id}_{receipt_id}")
+                        )
+                        
+                        for admin_id in BOT_ADMINS:
+                            await bot.send_photo(
+                                chat_id=admin_id,
+                                photo=file_id,
+                                caption=f"💰 *Müştəri cərimə ödənişi*\n\n"
+                                    f"Müştəri: {customer_name} (ID: {customer_id})\n"
+                                    f"Səbəb: {reason}\n"
+                                    f"Məbləğ: {amount} AZN\n\n"
+                                    f"Zəhmət olmasa yoxlayın və təsdiqləyin.",
+                                parse_mode="Markdown",
+                                reply_markup=keyboard
+                            )
+                    except Exception as admin_error:
+                        logger.error(f"Error notifying admin about customer fine: {admin_error}")
+                    
+                else:
+                    await message.answer(
+                        "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+                    )
+            
+            elif action == 'customer_fine_receipt':
+                # Get customer info
+                customer = get_customer_by_telegram_id(telegram_id)
+                if not customer:
+                    await message.answer("❌ Müştəri məlumatları tapılmadı.")
+                    return True  # Handler processed, stop further processing
+                
+                # Get the highest quality photo
+                photo = message.photo[-1]
+                file_id = photo.file_id
+                
+                # Save fine receipt for customer
+                from db import save_customer_fine_receipt
+                receipt_id = save_customer_fine_receipt(customer['id'], file_id)
+
+                if receipt_id:
                     # Clear user context
                     clear_user_context(telegram_id)
                     
@@ -2926,21 +3132,39 @@ def register_handlers(dp):
                     
                     # Notify admins
                     try:
+                        from config import BOT_ADMINS
+                        from dispatcher import bot
+                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                        
+                        # Create verification buttons for admin
+                        keyboard = InlineKeyboardMarkup(row_width=2)
+                        keyboard.add(
+                            InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"approve_customer_fine_{customer['id']}_{receipt_id}"),
+                            InlineKeyboardButton("❌ Rədd et", callback_data=f"reject_customer_fine_{customer['id']}_{receipt_id}")
+                        )
+                        
                         for admin_id in BOT_ADMINS:
                             await bot.send_photo(
                                 chat_id=admin_id,
                                 photo=file_id,
                                 caption=f"💰 *Müştəri cərimə ödənişi*\n\n"
-                                    f"Müştəri: {customer['name']} (ID: {customer['id']})\n\n"
+                                    f"Müştəri: {customer['name']} (ID: {customer['id']})\n"
+                                    f"Qəbz ID: {receipt_id}\n\n"
                                     f"Zəhmət olmasa yoxlayın və təsdiqləyin.",
-                                parse_mode="Markdown"
+                                parse_mode="Markdown",
+                                reply_markup=keyboard
                             )
                     except Exception as admin_error:
                         logger.error(f"Error notifying admin: {admin_error}")
+                    
+                    # Show customer menu after successful upload
+                    await show_customer_menu(message)
                 else:
                     await message.answer(
                         "❌ Qəbz yüklənərkən xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
                         )
+                
+                return True  # Handler processed successfully, stop further processing
 
         except Exception as e:
             logger.error(f"Error in handle_photo: {e}")
@@ -3394,60 +3618,50 @@ def register_handlers(dp):
 
     @dp.callback_query_handler(lambda c: c.data == "pay_customer_fine")
     async def pay_customer_fine_callback(callback_query: types.CallbackQuery):
-        """Handle pay fine button click"""
+        """Handle pay customer fine button press"""
         try:
-            # Buton tıklamasını onaylayın
-            await callback_query.answer()
-            
-            # Kullanıcı bilgilerini alın
             telegram_id = callback_query.from_user.id
-            customer = get_customer_by_telegram_id(telegram_id)
             
+            # Check if customer exists and is blocked
+            from db import get_customer_by_telegram_id, get_customer_blocked_status
+            
+            customer = get_customer_by_telegram_id(telegram_id)
             if not customer:
-                await callback_query.message.answer(
-                    "❌ Siz hələ müştəri kimi qeydiyyatdan keçməmisiniz."
-                )
+                await callback_query.answer("❌ Müştəri məlumatları tapılmadı.", show_alert=True)
                 return
-                
-            # Blok durumunu kontrol edin
+            
+            # Check block status
             is_blocked, reason, amount, block_until = get_customer_blocked_status(customer['id'])
             
             if not is_blocked:
-                await callback_query.message.answer(
-                    "✅ Sizin hesabınız bloklanmayıb. Bütün xidmətlərdən istifadə edə bilərsiniz."
-                )
+                await callback_query.answer("✅ Hesabınızda heç bir blok yoxdur.", show_alert=True)
                 return
-                
-            # Ödeme talimatları mesajını gösterin
+            
+            # Set user context for fine receipt upload
+            from db import set_user_context
+            set_user_context(telegram_id, {
+                'action': 'fine_payment',
+                'user_type': 'customer',
+                'customer_id': customer['id'],
+                'reason': reason,
+                'amount': amount
+            })
+            
+            # Ask for receipt upload
             await callback_query.message.answer(
-                f"💰 *Cərimə ödənişi*\n\n"
-                f"Hesabınız aşağıdakı səbəbə görə bloklanıb:\n"
-                f"*Səbəb:* {reason}\n\n"
-                f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n\n"
-                f"*Ödəniş təlimatları:*\n"
-                f"1. Bu karta ödəniş edin: {ADMIN_CARD_NUMBER} ({ADMIN_CARD_HOLDER})\n"
-                f"2. Ödəniş qəbzini saxlayın (şəkil çəkin)\n"
-                f"3. Qəbzi göndərmək üçün aşağıdakı düyməni basın\n\n"
-                f"⚠️ Qeyd: Ödəniş qəbzi yoxlanıldıqdan sonra hesabınız blokdan çıxarılacaq.",
-                parse_mode="Markdown"
+                f"💰 <b>Cərimə Ödənişi</b>\n\n"
+                f"🚫 Blok səbəbi: {reason}\n"
+                f"💸 Ödəniş məbləği: {amount} AZN\n\n"
+                f"📸 Zəhmət olmasa ödəniş qəbzini foto şəklində göndərin.\n"
+                f"📋 Qəbz admin tərəfindən yoxlanılacaq və təsdiqlənəndə blok açılacaq.",
+                parse_mode="HTML"
             )
             
-            # Makbuz gönderme düğmesini ekleyin
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(
-                "📸 Ödəniş qəbzini göndər", callback_data="send_customer_fine_receipt"
-            ))
-            
-            await callback_query.message.answer(
-                "Ödənişi tamamladıqdan sonra, qəbzi göndərmək üçün bu düyməni basın:",
-                reply_markup=keyboard
-            )
-            
+            await callback_query.answer()
+        
         except Exception as e:
             logger.error(f"Error in pay_customer_fine_callback: {e}")
-            await callback_query.message.answer(
-                "❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin."
-            )
+            await callback_query.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.", show_alert=True)
 
     # Əmr bələdçisi funksiyasını əlavə et
     dp.register_message_handler(show_command_guide, lambda message: message.text == "ℹ️ Əmr bələdçisi")

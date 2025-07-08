@@ -1999,14 +1999,23 @@ async def notify_user_about_block(user_type, user_id, reason, amount):
             logger.error(f"User {user_id} not found or missing telegram_id")
             return
         
-        # Send notification
+        # Send notification with clickable command button
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        if user_type == 'customer':
+            keyboard.add(InlineKeyboardButton("💰 Cəriməni ödə", callback_data="pay_customer_fine"))
+        else:  # artisan
+            keyboard.add(InlineKeyboardButton("💰 Cəriməni ödə", callback_data="send_fine_receipt"))
+        
         await bot.send_message(
             chat_id=user['telegram_id'],
-            text=f"⛔ *Hesabınız bloklandı*\n\n"
+            text=f"⛔ <b>Hesabınız bloklandı</b>\n\n"
                  f"Səbəb: {reason}\n\n"
                  f"Bloku açmaq üçün {amount} AZN ödəniş etməlisiniz.\n"
-                 f"Ödəniş etmək üçün: {command} komandası ilə ətraflı məlumat ala bilərsiniz.",
-            parse_mode="Markdown"
+                 f"Ödəniş etmək üçün aşağıdakı düyməni basın və ya {command} komandasını istifadə edin.",
+            reply_markup=keyboard,
+            parse_mode="HTML"
         )
         
     except Exception as e:
@@ -4188,6 +4197,197 @@ async def set_artisan_receipt_upload_state(telegram_id, advertisement_id):
         
     except Exception as e:
         logger.error(f"Error setting artisan receipt upload state: {e}")
+
+async def show_admin_fine_receipts(message):
+    """Show fine receipts for admin to approve/reject"""
+    try:
+        from db import execute_query, get_admin_customer_by_id, get_admin_artisan_by_id
+        
+        # Get pending fine receipts for both artisans and customers
+        artisan_query = """
+            SELECT fr.id, fr.artisan_id, NULL as customer_id, fr.file_id, fr.status, 
+                   fr.created_at, 'artisan' as user_type, ab.block_reason as reason, ab.required_payment
+            FROM fine_receipts fr
+            LEFT JOIN artisan_blocks ab ON fr.artisan_id = ab.artisan_id AND ab.is_blocked = TRUE
+            WHERE fr.status = 'pending'
+            ORDER BY fr.created_at DESC
+        """
+        
+        customer_query = """
+            SELECT cfr.id, NULL as artisan_id, cfr.customer_id, cfr.file_id, cfr.status, 
+                   cfr.created_at, 'customer' as user_type, cb.block_reason as reason, cb.required_payment
+            FROM customer_fine_receipts cfr
+            LEFT JOIN customer_blocks cb ON cfr.customer_id = cb.customer_id AND cb.is_blocked = TRUE
+            WHERE cfr.status = 'pending'
+            ORDER BY cfr.created_at DESC
+        """
+        
+        artisan_receipts = execute_query(artisan_query, fetchall=True, dict_cursor=True) or []
+        customer_receipts = execute_query(customer_query, fetchall=True, dict_cursor=True) or []
+        
+        # Combine and sort by date
+        all_receipts = artisan_receipts + customer_receipts
+        all_receipts.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        if not all_receipts:
+            await message.answer("📭 Yoxlanılası cərimə qəbzi tapılmadı.")
+            return
+        
+        await message.answer("💰 *Yoxlanılmamış Cərimə Qəbzləri*\n\nYoxlamaq üçün bir qəbz seçin:", parse_mode="Markdown")
+        
+        # Send each receipt with its details and verification buttons
+        for receipt in all_receipts:
+            receipt_id = receipt['id']
+            user_type = receipt['user_type']
+            
+            if user_type == 'artisan':
+                user = get_admin_artisan_by_id(receipt['artisan_id'])
+                user_title = "👷‍♂️ Usta"
+                callback_prefix = "approve_artisan_fine"
+                reject_prefix = "reject_artisan_fine"
+                user_id = receipt['artisan_id']
+            else:
+                user = get_admin_customer_by_id(receipt['customer_id'])
+                user_title = "👤 Müştəri"
+                callback_prefix = "approve_customer_fine"
+                reject_prefix = "reject_customer_fine"
+                user_id = receipt['customer_id']
+            
+            if not user:
+                continue
+            
+            # Create verification buttons
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("✅ Təsdiqlə", callback_data=f"{callback_prefix}_{user_id}_{receipt_id}"),
+                InlineKeyboardButton("❌ Rədd et", callback_data=f"{reject_prefix}_{user_id}_{receipt_id}")
+            )
+            
+            # Create caption with user details
+            caption = (
+                f"💰 <b>Cərimə Qəbzi #{receipt_id}</b>\n"
+                f"{user_title}: {user['name']}\n"
+                f"📱 Telefon: {user.get('phone', 'Təyin edilməyib')}\n"
+                f"🚫 Blok səbəbi: {receipt.get('reason', 'Təyin edilməyib')}\n"
+                f"💸 Cərimə məbləği: {receipt.get('required_payment', 'Təyin edilməyib')} AZN\n"
+                f"📅 Göndərmə tarixi: {receipt['created_at']}\n"
+                f"📊 Status: ⏳ Gözləyir"
+            )
+            
+            # Send receipt image with caption and buttons
+            if receipt['file_id']:
+                await bot.send_photo(
+                    chat_id=message.chat.id,
+                    photo=receipt['file_id'],
+                    caption=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                
+    except Exception as e:
+        logger.error(f"Error in show_admin_fine_receipts: {e}")
+        await message.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
+
+
+# Add fine receipt approval/rejection handlers
+@dp.callback_query_handler(lambda c: c.data.startswith(('approve_artisan_fine_', 'reject_artisan_fine_', 'approve_customer_fine_', 'reject_customer_fine_')))
+async def handle_fine_receipt_action(callback_query: types.CallbackQuery):
+    """Handle fine receipt approval/rejection"""
+    try:
+        if not is_admin(callback_query.from_user.id):
+            await callback_query.answer("❌ Bu əməliyyat yalnızca admin istifadəçilər üçün əlçatandır.", show_alert=True)
+            return
+        
+        data_parts = callback_query.data.split('_')
+        action = '_'.join(data_parts[:3])  # approve_artisan_fine or reject_artisan_fine etc.
+        user_id = int(data_parts[3])
+        receipt_id = int(data_parts[4])
+        
+        is_approved = action.startswith('approve')
+        is_artisan = 'artisan' in action
+        
+        from db import execute_query, unblock_artisan, unblock_customer
+        
+        if is_artisan:
+            table_name = "fine_receipts"
+            user_table = "artisan_blocks"
+            user_field = "artisan_id"
+            get_user_func = get_admin_artisan_by_id
+            unblock_func = unblock_artisan
+            user_type_text = "ustanın"
+        else:
+            table_name = "customer_fine_receipts"
+            user_table = "customer_blocks"
+            user_field = "customer_id"
+            get_user_func = get_admin_customer_by_id
+            unblock_func = unblock_customer
+            user_type_text = "müştərinin"
+        
+        if is_approved:
+            # Approve receipt and unblock user
+            
+            # Update receipt status
+            update_query = f"UPDATE {table_name} SET status = 'approved' WHERE id = %s"
+            execute_query(update_query, (receipt_id,), commit=True)
+            
+            # Unblock user
+            success = unblock_func(user_id)
+            
+            if success:
+                # Update message to show approval
+                await bot.edit_message_caption(
+                    chat_id=callback_query.message.chat.id,
+                    message_id=callback_query.message.message_id,
+                    caption=callback_query.message.caption + "\n\n✅ <b>Qəbz təsdiqləndi və istifadəçi blokdan çıxarıldı!</b>",
+                    reply_markup=None,
+                    parse_mode="HTML"
+                )
+                
+                # Notify user about approval
+                user = get_user_func(user_id)
+                if user and user.get('telegram_id'):
+                    await bot.send_message(
+                        chat_id=user['telegram_id'],
+                        text=f"✅ <b>Cərimə qəbzi təsdiqləndi!</b>\n\n"
+                             f"Hesabınızın bloku açıldı. İndi bütün xidmətlərdən istifadə edə bilərsiniz.",
+                        parse_mode="HTML"
+                    )
+                
+                await callback_query.answer(f"✅ {user_type_text.capitalize()} cərimə qəbzi təsdiqləndi və bloku açıldı!")
+            else:
+                await callback_query.answer("❌ Bloku açarkən xəta baş verdi.", show_alert=True)
+        else:
+            # Reject receipt
+            
+            # Update receipt status
+            update_query = f"UPDATE {table_name} SET status = 'rejected' WHERE id = %s"
+            execute_query(update_query, (receipt_id,), commit=True)
+            
+            # Update message to show rejection
+            await bot.edit_message_caption(
+                chat_id=callback_query.message.chat.id,
+                message_id=callback_query.message.message_id,
+                caption=callback_query.message.caption + "\n\n❌ <b>Qəbz rədd edildi!</b>",
+                reply_markup=None,
+                parse_mode="HTML"
+            )
+            
+            # Notify user about rejection
+            user = get_user_func(user_id)
+            if user and user.get('telegram_id'):
+                await bot.send_message(
+                    chat_id=user['telegram_id'],
+                    text=f"❌ <b>Cərimə qəbzi rədd edildi!</b>\n\n"
+                         f"Qəbziniz uyğun görülmədi. Zəhmət olmasa düzgün ödəniş qəbzi göndərin.\n"
+                         f"Yeni qəbz göndərmək üçün cərimə ödəmə düyməsini yenidən basın.",
+                    parse_mode="HTML"
+                )
+            
+            await callback_query.answer(f"❌ {user_type_text.capitalize()} cərimə qəbzi rədd edildi!")
+        
+    except Exception as e:
+        logger.error(f"Error in handle_fine_receipt_action: {e}")
+        await callback_query.answer("❌ Xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.", show_alert=True)
 
 if __name__ == '__main__':
     # Register all handlers
