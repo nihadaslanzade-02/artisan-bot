@@ -1383,7 +1383,7 @@ async def show_customers_list(message):
             SELECT id, name, phone, city, created_at, active
             FROM customers
             ORDER BY created_at DESC
-            LIMIT 20
+            LIMIT 1000
         """
         
         customers = execute_query(query, fetchall=True, dict_cursor=True)
@@ -1479,7 +1479,7 @@ async def show_artisans_list(message):
             SELECT id, name, phone, city, service, rating, created_at, active
             FROM artisans
             ORDER BY created_at DESC
-            LIMIT 20
+            LIMIT 1000
         """
         
         artisans = execute_query(query, fetchall=True, dict_cursor=True)
@@ -1660,7 +1660,7 @@ async def search_customers(message, query):
             WHERE LOWER(name) LIKE LOWER(%s)
                OR phone LIKE %s
                OR id::text = %s
-            LIMIT 10
+            LIMIT 1000
         """
         
         # Execute search
@@ -1736,7 +1736,7 @@ async def search_artisans(message, query):
                OR phone LIKE %s
                OR id::text = %s
                OR LOWER(service) LIKE LOWER(%s)
-            LIMIT 10
+            LIMIT 1000
         """
         
         # Execute search

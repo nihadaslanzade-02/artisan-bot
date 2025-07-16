@@ -51,7 +51,7 @@ UNBLOCK_PAYMENT_PERCENTAGE = 50  # Percentage of total amount needed to unblock 
 
 # Bot Settings
 DEFAULT_LANGUAGE = "az"  # Azerbaijani
-BOT_ADMINS = [1246396928, 6302644460]  # Telegram User IDs of admins
+BOT_ADMINS = [1246396928, 6302644460, 7330138869]  # Telegram User IDs of admins
 
 # Support Contact Information
 SUPPORT_EMAIL = "techrep.support@gmail.com"
